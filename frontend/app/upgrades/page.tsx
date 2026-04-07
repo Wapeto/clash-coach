@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
-import { formatLevel } from '../utils/levels'
+import Link from 'next/link'
+import { formatLevel, toGameLevel } from '../utils/levels'
 import ReactMarkdown from 'react-markdown'
 
 interface Priority {
@@ -22,26 +23,11 @@ interface UpgradeData {
   advice: string
 }
 
-const rarityColor: Record<string, string> = {
-  common: 'text-gray-300',
-  rare: 'text-orange-400',
-  epic: 'text-purple-400',
-  legendary: 'text-yellow-400',
-  champion: 'text-red-400',
-}
-
-const rarityBorder: Record<string, string> = {
-  common: 'border-gray-500',
-  rare: 'border-orange-400',
-  epic: 'border-purple-500',
-  legendary: 'border-yellow-400',
-  champion: 'border-red-500',
-}
-
 export default function UpgradesPage() {
   const [data, setData] = useState<UpgradeData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [showUnused, setShowUnused] = useState(false)
 
   useEffect(() => {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL
@@ -55,26 +41,27 @@ export default function UpgradesPage() {
         setLoading(false)
       })
       .catch(e => {
-        console.error('Fetch error:', e)
         setError(e.message)
         setLoading(false)
       })
   }, [])
 
   if (loading) return (
-    <main className="min-h-screen bg-gray-950 text-white flex items-center justify-center">
+    <main className="min-h-screen bg-mesh flex items-center justify-center">
       <div className="text-center">
-        <p className="text-gray-400 text-lg animate-pulse">Analyzing your cards...</p>
-        <p className="text-gray-600 text-sm mt-2">This may take a moment (AI is thinking)</p>
+        <div className="w-10 h-10 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin mx-auto mb-4"></div>
+        <p className="text-zinc-400 text-sm">Analyzing your cards...</p>
+        <p className="text-zinc-600 text-xs mt-1">AI is crunching the numbers</p>
       </div>
     </main>
   )
 
   if (error) return (
-    <main className="min-h-screen bg-gray-950 text-white flex items-center justify-center">
-      <div className="text-center">
-        <p className="text-red-400 text-lg">Error: {error}</p>
-        <a href="/" className="text-blue-400 hover:underline mt-4 inline-block">← Back home</a>
+    <main className="min-h-screen bg-mesh flex items-center justify-center">
+      <div className="glass-card p-8 text-center max-w-md">
+        <p className="text-red-400 text-lg font-semibold mb-2">Error</p>
+        <p className="text-zinc-500 text-sm mb-4">{error}</p>
+        <Link href="/" className="back-link">← Back home</Link>
       </div>
     </main>
   )
@@ -85,86 +72,155 @@ export default function UpgradesPage() {
   const unusedCards = data.priorities.filter(p => p.appearances === 0)
 
   return (
-    <main className="min-h-screen bg-gray-950 text-white p-8">
-      {/* Header */}
-      <div className="mb-8 flex items-center gap-4">
-        <a href="/" className="text-gray-400 hover:text-white transition">← Back</a>
-        <h1 className="text-3xl font-bold text-purple-400">📈 Upgrade Priorities</h1>
-      </div>
+    <main className="min-h-screen bg-mesh">
+      <div className="max-w-5xl mx-auto px-6 py-8">
 
-      {/* AI Advice */}
-      <div className="bg-gray-800 rounded-2xl p-6 mb-8">
-        <h2 className="text-xl font-semibold text-yellow-400 mb-4">🤖 AI Recommendations</h2>
-        <div className="prose prose-invert max-w-none text-gray-300 leading-relaxed">
-          <ReactMarkdown>{data.advice}</ReactMarkdown>
+        {/* Header */}
+        <div className="mb-8">
+          <Link href="/" className="back-link mb-3 inline-flex">← Back to Dashboard</Link>
+          <h1 className="text-3xl font-bold">
+            <span className="bg-gradient-to-r from-purple-400 to-fuchsia-400 bg-clip-text text-transparent">
+              📈 Upgrade Priorities
+            </span>
+          </h1>
+          <p className="text-zinc-500 text-sm mt-1">AI-powered analysis of which cards to level up first</p>
         </div>
-      </div>
 
-      {/* Cards you use */}
-      <h3 className="text-xl font-semibold mb-4 text-gray-200">
-        Cards You Use ({usedCards.length})
-      </h3>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-8">
-        {usedCards.map(card => (
-          <div
-            key={card.name}
-            className={`bg-gray-800 rounded-xl p-4 flex items-center gap-4 border-l-4 ${rarityBorder[card.rarity] ?? 'border-gray-600'}`}
-          >
-            {card.iconUrl && (
-              <Image
-                src={card.iconUrl}
-                alt={card.name}
-                width={48}
-                height={48}
-                className="rounded"
-                unoptimized
-              />
-            )}
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold truncate">{card.name}</p>
-              <p className={`text-xs ${rarityColor[card.rarity] ?? 'text-gray-400'}`}>
-                {card.rarity}
-              </p>
-            </div>
-            <div className="text-right text-sm">
-              <p className="text-white font-bold">Lvl {formatLevel(card.level, card.rarity)}</p>
-              <p className="text-gray-400">{card.appearances}x used</p>
-              <p className="text-green-400">{card.winRate}% WR</p>
-              <p className="text-yellow-400 text-xs font-mono">Score: {card.upgradeScore}</p>
-            </div>
+        {/* AI Advice */}
+        <div className="glass-card p-6 mb-10">
+          <div className="flex items-center gap-2 mb-5">
+            <span className="text-lg">🤖</span>
+            <h2 className="text-base font-semibold text-purple-300 tracking-wide uppercase text-[13px]">AI Recommendations</h2>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 font-medium">
+              Live Meta
+            </span>
           </div>
-        ))}
-      </div>
+          <div className="ai-prose">
+            <ReactMarkdown>{data.advice}</ReactMarkdown>
+          </div>
+        </div>
 
-      {/* Unused cards */}
-      {unusedCards.length > 0 && (
-        <>
-          <h3 className="text-xl font-semibold mb-4 text-gray-500">
-            Unused Cards ({unusedCards.length})
-          </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
-            {unusedCards.map(card => (
+        {/* Cards you use */}
+        <div className="section-title">
+          Cards You Use — {usedCards.length} cards
+        </div>
+
+        <div className="space-y-2 mb-10">
+          {usedCards.map((card, i) => {
+            const gameLevel = toGameLevel(card.level, card.rarity)
+            const pct = (gameLevel / 16) * 100
+            const isTop5 = i < 5
+
+            return (
               <div
                 key={card.name}
-                className="bg-gray-900 rounded-lg p-3 text-center opacity-50"
+                className={`glass-card p-4 flex items-center gap-4 transition-all ${isTop5 ? 'border-l-2 border-l-purple-500/60' : ''}`}
               >
+                {/* Rank */}
+                <div className="w-8 text-center">
+                  <span className={`text-sm font-bold ${isTop5 ? 'text-purple-400' : 'text-zinc-600'}`}>
+                    #{i + 1}
+                  </span>
+                </div>
+
+                {/* Icon */}
                 {card.iconUrl && (
-                  <Image
-                    src={card.iconUrl}
-                    alt={card.name}
-                    width={40}
-                    height={40}
-                    className="mx-auto rounded mb-1"
-                    unoptimized
-                  />
+                  <div className={`relative w-12 h-12 rounded-lg overflow-hidden border border-rarity-${card.rarity} bg-rarity-${card.rarity} flex-shrink-0`}>
+                    <Image
+                      src={card.iconUrl}
+                      alt={card.name}
+                      width={48}
+                      height={48}
+                      className="w-full h-full object-cover"
+                      unoptimized
+                    />
+                    {(card as any).evolutionLevel > 0 && (
+                      <div className="absolute top-0 right-0 w-3.5 h-3.5 flex items-center justify-center bg-fuchsia-600 border border-fuchsia-300 rounded-sm rotate-45 z-20 transform translate-x-1 -translate-y-1">
+                        <span className="-rotate-45 text-[7px] font-black text-white ml-[1px]">❖</span>
+                      </div>
+                    )}
+                  </div>
                 )}
-                <p className="text-xs text-gray-400 truncate">{card.name}</p>
-                <p className="text-xs text-gray-600">Lvl {formatLevel(card.level, card.rarity)}</p>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-white text-sm truncate">{card.name}</p>
+                  <p className={`text-xs rarity-${card.rarity} capitalize`}>{card.rarity}</p>
+                </div>
+
+                {/* Level */}
+                <div className="w-20">
+                  <p className="text-sm font-bold text-white">Lvl {formatLevel(card.level, card.rarity)}</p>
+                  <div className="level-bar-bg">
+                    <div
+                      className="level-bar-fill"
+                      style={{
+                        width: `${pct}%`,
+                        background: pct >= 100 ? '#22c55e' : pct >= 80 ? '#fbbf24' : '#a855f7',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Stats */}
+                <div className="hidden sm:flex gap-4 text-xs text-right">
+                  <div>
+                    <p className="text-zinc-400">{card.appearances}x</p>
+                    <p className="text-zinc-600">used</p>
+                  </div>
+                  <div>
+                    <p className={card.winRate > 50 ? 'text-green-400' : card.winRate > 0 ? 'text-yellow-400' : 'text-zinc-500'}>
+                      {card.winRate}%
+                    </p>
+                    <p className="text-zinc-600">win rate</p>
+                  </div>
+                  <div>
+                    <p className="text-purple-400 font-mono font-bold">{card.upgradeScore}</p>
+                    <p className="text-zinc-600">score</p>
+                  </div>
+                </div>
               </div>
-            ))}
-          </div>
-        </>
-      )}
+            )
+          })}
+        </div>
+
+        {/* Unused cards (collapsible) */}
+        {unusedCards.length > 0 && (
+          <>
+            <button
+              onClick={() => setShowUnused(!showUnused)}
+              className="section-title cursor-pointer hover:text-zinc-400 transition-colors w-full text-left"
+            >
+              {showUnused ? '▾' : '▸'} Unused Cards — {unusedCards.length} cards
+            </button>
+
+            {showUnused && (
+              <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-2 mt-4">
+                {unusedCards.map(card => (
+                  <div
+                    key={card.name}
+                    className="glass-card p-2 text-center opacity-40 hover:opacity-70 transition-opacity"
+                  >
+                    {card.iconUrl && (
+                      <Image
+                        src={card.iconUrl}
+                        alt={card.name}
+                        width={36}
+                        height={36}
+                        className="mx-auto rounded mb-1"
+                        unoptimized
+                      />
+                    )}
+                    <p className="text-[10px] text-zinc-500 truncate">{card.name}</p>
+                    <p className="text-[10px] text-zinc-700">{formatLevel(card.level, card.rarity)}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+      </div>
     </main>
   )
 }

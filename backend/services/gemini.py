@@ -9,48 +9,35 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 MODEL = "gemini-2.5-flash"
 
-# Rarity start levels — all cards max at 16 in-game,
-# but the API returns levels relative to rarity.
-RARITY_START_LEVEL = {
-    "common": 1,
-    "rare": 3,
-    "epic": 6,
-    "legendary": 9,
-    "champion": 11,
-}
-
-
-def to_game_level(api_level: int, rarity: str) -> int:
-    start = RARITY_START_LEVEL.get(rarity.lower(), 1)
-    return start + api_level - 1
-
-
-def fmt_level(api_level: int, rarity: str) -> str:
-    return f"{to_game_level(api_level, rarity)}/16"
-
-
-# Google Search grounding — lets Gemini look up current meta,
-# balance changes, and card stats for free.
-search_tool = types.Tool(google_search=types.GoogleSearch())
-
-
 def ask_gemini(prompt: str) -> str:
     response = client.models.generate_content(
         model=MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(
-            tools=[search_tool],
-        ),
+            tools=[{"google_search": {}}],
+            temperature=0.7,
+        )
     )
     return response.text
 
+def fmt_level(api_level: int, rarity: str) -> str:
+    start_levels = {
+        "common": 1,
+        "rare": 3,
+        "epic": 6,
+        "legendary": 9,
+        "champion": 11,
+    }
+    start = start_levels.get(rarity.lower(), 1)
+    return str(start + api_level - 1)
 
+def format_card_entry(c: dict) -> str:
+    lvl = fmt_level(c["level"], c["rarity"])
+    evo = " (EVOLVED)" if c.get("evolutionLevel", 0) > 0 else ""
+    return f"{c['name']}{evo} (Lvl {lvl}/16, {c['rarity']})"
 
 def prompt_best_decks(player: dict, priorities: list, decks: list) -> str:
-    card_list = [
-        f"{c['name']} (Lvl {fmt_level(c['level'], c['rarity'])}, {c['rarity']})"
-        for c in player["cards"]
-    ]
+    card_list = [format_card_entry(c) for c in player["cards"]]
     priority_list = [
         f"{p['name']} (score: {p['upgradeScore']}, lvl {fmt_level(p['level'], p['rarity'])})"
         for p in priorities[:10]
@@ -58,93 +45,95 @@ def prompt_best_decks(player: dict, priorities: list, decks: list) -> str:
     recent_decks = [
         ", ".join(c["name"] for c in d["cards"])
         for d in decks
-        if d["gameMode"] == "Ladder"
     ]
 
-    prompt = f"""You are an expert Clash Royale coach. Be concise and specific.
-Use Google Search to look up the current Clash Royale meta, recent balance changes,
-and top ladder decks so your advice reflects the latest game state.
+    prompt = f"""You are an expert Clash Royale coach.
+Your job is to recommend the 3 best ladder decks and 1 clan war deck for the player based on their card levels and the CURRENT Meta.
+Use Google Search grounding to find the absolute latest meta decks (e.g. from RoyaleAPI or top ladder).
 
-Player: {player['name']}
-Trophies: {player['trophies']} (Royal Road)
-King Level: {player['expLevel']}
+Player Data:
+- Trophies: {player.get("trophies", "Unknown")}
+- Cards: {chr(10).join(card_list)}
+- High Priority Upgrades (Cards they play often): {chr(10).join(priority_list)}
+- Recently played decks: {chr(10).join(recent_decks)}
 
-Full card collection with levels (out of max 16):
-{chr(10).join(card_list)}
-
-Recent ladder decks used:
-{chr(10).join(recent_decks) or 'None found'}
-
-Top upgrade priorities (by usage + level gap):
-{chr(10).join(priority_list)}
-
-Task: Suggest the 3 best ladder decks this player can play RIGHT NOW with their current card levels.
-For each deck:
-1. Deck name and archetype
-2. The 8 cards (only cards from their collection)
-3. Average elixir cost
-4. Why it suits their card levels specifically
-5. One-line win condition summary
-
-Then suggest 1 clan war deck separately.
+CRITICAL RULES FOR OUTPUT FORMATTING:
+1. You MUST use rich Markdown formatting (H3 headers `###`, bold text `**`, and bullet points `- `).
+2. DO NOT return a solid wall of text. Break up paragraphs.
+3. For each deck, explicitly list:
+   - **Archetype**: (e.g. Beatdown, Log Bait, etc)
+   - **Cards**: (list all 8)
+   - **Why it fits their levels**: (explain briefly)
+   - **Win Condition Summary**: (1 sentence playstyle)
+4. Highlight EVOLVED cards or CHAMPIONS strongly.
 """
     return ask_gemini(prompt)
 
 
 def prompt_upgrade_advice(priorities: list, player: dict) -> str:
-    top = priorities[:15]
-    lines = [
-        f"{p['name']}: Lvl {fmt_level(p['level'], p['rarity'])}, used {p['appearances']}x, "
-        f"WR {p['winRate']}%, rarity: {p['rarity']}"
-        for p in top
-    ]
+    top_picks = priorities[:5]
+    details = []
+    for i, p in enumerate(top_picks):
+        lvl = fmt_level(p["level"], p["rarity"])
+        evo = " (EVOLVED)" if p.get("evolutionLevel", 0) > 0 else ""
+        details.append(
+            f"{i+1}. {p['name']}{evo} (Lvl {lvl}/{p['maxLevel']}, {p['rarity']}) "
+            f"- Win Rate: {p['winRate']}%, Score: {p['upgradeScore']}"
+        )
 
-    prompt = f"""You are an expert Clash Royale coach. Be concise and actionable.
-Use Google Search to check the current Clash Royale meta and recent balance changes
-to inform your upgrade recommendations.
+    prompt = f"""You are an expert Clash Royale coach. Give upgrade advice based on the math.
+Trophy range: {player.get('trophies', 'Unknown')}
 
-Player trophies: {player['trophies']}
-King Level: {player['expLevel']}
+Top 5 algorithmically recommended upgrades:
+{chr(10).join(details)}
 
-Cards ranked by upgrade impact (frequency × level gap × win rate potential):
-{chr(10).join(lines)}
-
-Note: All card levels shown are in-game levels out of a max of 16.
-
-Task: Explain in plain language which 5 cards to upgrade first and why.
-Consider: rarity (commons/rares are cheaper), how often they're used, how much a level
-gap hurts at this trophy range, and whether the card is strong in the current meta.
-Give a short, punchy reason for each pick.
+CRITICAL RULES FOR OUTPUT FORMATTING:
+1. You MUST use rich Markdown formatting.
+2. Use bullet points `- ` and bold text `**`.
+3. Provide a 2-3 sentence explanation for why EACH of the 5 cards is a good upgrade right now.
+4. Reference current meta strength using Google Search where relevant.
+5. Consider rarity (commons/rares are easier to max).
+6. Give a short, punchy reason for each pick using bolding.
 """
     return ask_gemini(prompt)
 
 
 def prompt_deck_coach(deck_cards: list, trophies: int) -> str:
     card_lines = [
-        f"{c['name']} (Lvl {fmt_level(c['level'], c['rarity'])}, {c['rarity']}, {c['elixirCost']} elixir)"
+        f"- {c['name']}{' (EVOLVED)' if c.get('evolutionLevel', 0) > 0 else ''} (Lvl {fmt_level(c['level'], c['rarity'])}, {c['rarity']}, {c['elixirCost']} elixir)"
         for c in deck_cards
     ]
     avg_elixir = round(sum(c["elixirCost"] for c in deck_cards) / len(deck_cards), 2)
 
     prompt = f"""You are an expert Clash Royale coach. Be specific and practical.
-Use Google Search to look up the current meta, recent balance changes, and how this
-deck archetype performs on ladder right now. Reference specific current-season data
-if available.
+Use Google Search to look up the current meta, recent balance changes, and how this deck archetype performs on ladder right now.
 
 Deck to analyze:
 {chr(10).join(card_lines)}
 Average elixir: {avg_elixir}
 Player trophy range: {trophies}
 
-Note: All card levels shown are in-game levels out of a max of 16.
+CRITICAL RULES FOR OUTPUT FORMATTING:
+1. You MUST use rich Markdown formatting (`###` headers, bullet points, bold text).
+2. DO NOT return a solid wall of text.
+3. Structure your response EXACTLY with these markdown headers:
+### ⚔️ Game Plan & Win Condition
+(Explain core strategy)
 
-Give a full coaching breakdown:
-1. Win condition and core game plan
-2. Recommended opening play (first card to play and where)
-3. Elixir management and cycle strategy
-4. How to play vs these archetypes: Beatdown, Bait, Control, Bridge Spam, Hog Cycle
-5. Top 3 mistakes players make with this deck and how to fix them
-6. One specific drill or habit to practice this week to improve with this deck
-7. Current meta relevance: is this deck strong/weak right now and why?
+### 🎯 Recommended Openers
+(First cards to play and where)
+
+### 💧 Elixir Management
+(Cycle strategy)
+
+### 🛡️ Matchups
+- **Beatdown**: ...
+- **Cycle/Bait**: ...
+
+### ⚠️ Common Mistakes
+(Top 3 mistakes with this deck)
+
+### 📈 Meta Relevance
+(Is this deck strong right now? Mention recent buffs/nerfs from search)
 """
     return ask_gemini(prompt)
