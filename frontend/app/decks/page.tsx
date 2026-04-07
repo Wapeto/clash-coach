@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { formatLevel } from '../utils/levels'
@@ -55,6 +55,7 @@ export default function DecksPage() {
   const [decksJobId, setDecksJobId] = useState<string | null>(null)
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? ''
+  const fetchedRef = useRef(false)
   const decksJob = useChainPolling(decksJobId, apiUrl)
   const coachJob = useChainPolling(coachJobId, apiUrl)
 
@@ -84,6 +85,8 @@ export default function DecksPage() {
   }, [coachJob])
 
   useEffect(() => {
+    if (fetchedRef.current) return
+    fetchedRef.current = true
     const mode = getApiMode()
     fetch(`${apiUrl}/decks?mode=${mode}`)
       .then(r => {
@@ -102,7 +105,7 @@ export default function DecksPage() {
         setError(e.message)
         setLoading(false)
       })
-  }, [apiUrl])
+  }, [])
 
   const handleCoach = (index: number) => {
     if (coachIndex === index && coachAdvice) {
@@ -139,7 +142,7 @@ export default function DecksPage() {
     return (
       <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 my-4">
         {cardNames.map(name => {
-          const card = data?.collection.find(c => c.name === name)
+          const card = data?.collection.find(c => c.name.toLowerCase() === name.toLowerCase())
           if (!card) return (
             <div key={name} className="glass-card flex items-center justify-center p-2 text-center h-[80px]">
               <span className="text-[10px] text-zinc-500">{name}</span>
@@ -216,15 +219,49 @@ export default function DecksPage() {
   }
 
   if (loading) return (
-    <main className="min-h-screen bg-mesh flex items-center justify-center">
-      <div className="text-center">
-        <div className="w-10 h-10 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
-        <p className="text-zinc-400 text-sm">
+    <main className="min-h-screen bg-mesh flex items-center justify-center px-4">
+      <div className="text-center max-w-md w-full">
+        {/* Animated icon */}
+        <div className="relative mx-auto mb-8 w-24 h-24">
+          <div className="absolute inset-0 rounded-full border-4 border-blue-500/20 border-t-blue-500 animate-spin" />
+          <div className="absolute inset-3 rounded-full border-4 border-cyan-500/20 border-b-cyan-500 animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }} />
+          <div className="absolute inset-0 flex items-center justify-center text-3xl">🃏</div>
+        </div>
+
+        {/* Main message */}
+        <h2 className="text-xl font-bold text-white mb-2">
           {decksJob ? (STEP_LABELS[decksJob.current_step] ?? 'Processing...') : 'Analyzing your decks...'}
+        </h2>
+        <p className="text-zinc-500 text-sm mb-6">
+          {decksJob ? '🔬 Deep analysis in progress — ~20s' : 'AI is finding the best strategies'}
         </p>
-        <p className="text-zinc-600 text-xs mt-1">
-          {decksJob ? '🔬 Deep mode — this takes ~20s' : 'AI is finding the best strategies'}
-        </p>
+
+        {/* Step progress */}
+        {decksJob && (
+          <div className="glass-card p-4 text-left space-y-2">
+            {(['analyst', 'meta_search', 'strategist', 'fact_checker'] as const).map((step) => {
+              const steps = ['analyst', 'meta_search', 'strategist', 'fact_checker']
+              const currentIdx = steps.indexOf(decksJob.current_step)
+              const isDone = steps.indexOf(step) < currentIdx
+              const isCurrent = decksJob.current_step === step
+              return (
+                <div key={step} className={`flex items-center gap-3 text-sm transition-all ${isDone ? 'text-green-400' : isCurrent ? 'text-white' : 'text-zinc-600'}`}>
+                  <span className="text-base">{isDone ? '✓' : isCurrent ? '⟳' : '○'}</span>
+                  <span className={isCurrent ? 'font-semibold' : ''}>{STEP_LABELS[step] ?? step}</span>
+                  {isCurrent && <span className="ml-auto w-3 h-3 rounded-full bg-blue-500 animate-pulse" />}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {!decksJob && (
+          <div className="flex justify-center gap-1.5">
+            {[0, 1, 2, 3].map(i => (
+              <div key={i} className="w-2 h-2 rounded-full bg-blue-500/60 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+            ))}
+          </div>
+        )}
       </div>
     </main>
   )

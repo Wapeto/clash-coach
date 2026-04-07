@@ -111,18 +111,21 @@ def coach(deck_index: int, mode: str = "fast"):
         if deck_index >= len(used_decks):
             raise HTTPException(status_code=404, detail="Deck index out of range")
         deck = used_decks[deck_index]
+        # Enrich battle-log cards with collection data (adds evolutionLevel, iconUrls, etc.)
+        card_lookup = {c["name"]: c for c in p.get("cards", [])}
+        enriched_cards = [card_lookup.get(c["name"], c) for c in deck["cards"]]
 
         if mode == "deep":
             job_id = create_job()
             threading.Thread(
                 target=run_coach_chain,
-                args=(job_id, deck["cards"], p["trophies"]),
+                args=(job_id, enriched_cards, p["trophies"]),
                 daemon=True,
             ).start()
             return {"job_id": job_id, "status": "running"}
 
         try:
-            advice = prompt_deck_coach(deck["cards"], p["trophies"])
+            advice = prompt_deck_coach(enriched_cards, p["trophies"])
         except Exception as e:
             logger.error(traceback.format_exc())
             advice = _ai_error_msg(e)

@@ -177,25 +177,53 @@ def prompt_deck_coach(deck_cards: list, trophies: int) -> str:
     card_lines = ["- " + format_card_entry(c) for c in deck_cards]
     avg_elixir = round(sum(c.get("elixirCost", 0) for c in deck_cards) / len(deck_cards), 2)
 
+    evo_hero_notes = []
+    for c in deck_cards:
+        urls = c.get("iconUrls", {})
+        if c.get("evolutionLevel", 0) > 0:
+            if urls.get("heroMedium"):
+                evo_hero_notes.append(f"{c['name']} (player owns the HERO version)")
+            elif urls.get("evolutionMedium"):
+                evo_hero_notes.append(f"{c['name']} (player owns the EVO version)")
+    evo_hero_str = (
+        "Player's special cards in this deck: " + ", ".join(evo_hero_notes)
+        if evo_hero_notes else "No Evos or Heroes in this deck."
+    )
+
     prompt = f"""You are an expert Clash Royale coach. Be specific and practical.
 {NO_HYPE_INSTRUCTION}
-Use Google Search to look up the current meta, recent balance changes, and how this deck archetype performs on ladder right now.
+Use Google Search to look up the current meta, recent balance changes, and how this deck performs on ladder right now.
 
-Deck to analyze:
+Deck ({avg_elixir} avg elixir):
 {chr(10).join(card_lines)}
-Average elixir: {avg_elixir}
+{evo_hero_str}
 Player trophy range: {trophies}
 
-Structure your response EXACTLY with these Markdown headers (no preamble before the first header):
-### ⚔️ Game Plan & Win Condition
-### 🎯 Recommended Openers
-### 💧 Elixir Management
-### 🛡️ Matchups
-- Beatdown: ...
-- Cycle/Bait: ...
-### ⚠️ Common Mistakes
-### 📈 Meta Relevance
+Structure your response EXACTLY with these Markdown headers, no preamble before the first one:
 
-Use **bold** only for card names or key terms.
+### 🃏 Why These Cards Work Together
+(Explain the role of each card and its synergy with the others. Mention how Evos/Heroes change the dynamic if present.)
+
+### ⚔️ Game Plan & Win Condition
+(Core strategy to win)
+
+### 🎯 Recommended Openers
+(First plays and where to place them)
+
+### 💧 Elixir Management
+(Cycle strategy and key trades)
+
+### 🛡️ Matchups
+- vs Beatdown: ...
+- vs Cycle/Bait: ...
+- vs Control: ...
+
+### ⚠️ Common Mistakes
+(Top 3 mistakes players make with this deck)
+
+### 📈 Meta Relevance
+(Current standing in the meta based on live data)
+
+Use **bold** only for card names and key terms.
 """
     return ask_gemini(prompt)

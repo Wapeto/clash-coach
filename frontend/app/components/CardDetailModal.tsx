@@ -77,7 +77,7 @@ export default function CardDetailModal({ card, onClose }: Props) {
               alt={card.name}
               width={112}
               height={112}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
               unoptimized
             />
             {hasEvo && (

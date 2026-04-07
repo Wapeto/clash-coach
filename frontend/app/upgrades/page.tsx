@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { formatLevel, toGameLevel } from '../utils/levels'
@@ -38,6 +38,7 @@ export default function UpgradesPage() {
   const [upgradesJobId, setUpgradesJobId] = useState<string | null>(null)
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? ''
+  const fetchedRef = useRef(false)
   const upgradesJob = useChainPolling(upgradesJobId, apiUrl)
 
   useEffect(() => {
@@ -52,6 +53,8 @@ export default function UpgradesPage() {
   }, [upgradesJob])
 
   useEffect(() => {
+    if (fetchedRef.current) return
+    fetchedRef.current = true
     const mode = getApiMode()
     fetch(`${apiUrl}/upgrades?mode=${mode}`)
       .then(r => {
@@ -70,18 +73,52 @@ export default function UpgradesPage() {
         setLoading(false)
         console.error(e)
       })
-  }, [apiUrl])
+  }, [])
 
   if (loading) return (
-    <main className="min-h-screen bg-mesh flex items-center justify-center">
-      <div className="text-center">
-        <div className="w-10 h-10 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin mx-auto mb-4"></div>
-        <p className="text-zinc-400 text-sm">
+    <main className="min-h-screen bg-mesh flex items-center justify-center px-4">
+      <div className="text-center max-w-md w-full">
+        {/* Animated icon */}
+        <div className="relative mx-auto mb-8 w-24 h-24">
+          <div className="absolute inset-0 rounded-full border-4 border-purple-500/20 border-t-purple-500 animate-spin" />
+          <div className="absolute inset-3 rounded-full border-4 border-fuchsia-500/20 border-b-fuchsia-500 animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }} />
+          <div className="absolute inset-0 flex items-center justify-center text-3xl">📈</div>
+        </div>
+
+        {/* Main message */}
+        <h2 className="text-xl font-bold text-white mb-2">
           {upgradesJob ? (STEP_LABELS[upgradesJob.current_step] ?? 'Processing...') : 'Analyzing your cards...'}
+        </h2>
+        <p className="text-zinc-500 text-sm mb-6">
+          {upgradesJob ? '🔬 Deep analysis in progress — ~20s' : 'AI is crunching your battle data'}
         </p>
-        <p className="text-zinc-600 text-xs mt-1">
-          {upgradesJob ? '🔬 Deep mode — this takes ~20s' : 'AI is crunching the numbers'}
-        </p>
+
+        {/* Step progress */}
+        {upgradesJob && (
+          <div className="glass-card p-4 text-left space-y-2">
+            {(['analyst', 'strategist', 'fact_checker'] as const).map((step, i) => {
+              const steps = ['analyst', 'strategist', 'fact_checker']
+              const currentIdx = steps.indexOf(upgradesJob.current_step)
+              const isDone = steps.indexOf(step) < currentIdx
+              const isCurrent = upgradesJob.current_step === step
+              return (
+                <div key={step} className={`flex items-center gap-3 text-sm transition-all ${isDone ? 'text-green-400' : isCurrent ? 'text-white' : 'text-zinc-600'}`}>
+                  <span className="text-base">{isDone ? '✓' : isCurrent ? '⟳' : '○'}</span>
+                  <span className={isCurrent ? 'font-semibold' : ''}>{STEP_LABELS[step] ?? step}</span>
+                  {isCurrent && <span className="ml-auto w-3 h-3 rounded-full bg-purple-500 animate-pulse" />}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {!upgradesJob && (
+          <div className="flex justify-center gap-1.5">
+            {[0, 1, 2, 3].map(i => (
+              <div key={i} className="w-2 h-2 rounded-full bg-purple-500/60 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+            ))}
+          </div>
+        )}
       </div>
     </main>
   )

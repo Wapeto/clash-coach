@@ -45,6 +45,8 @@ def compute_upgrade_priorities(player: dict, battles: list) -> list:
             "winRate": round(win_rate * 100, 1),
             "upgradeScore": round(score, 2),
             "iconUrl": card.get("iconUrls", {}).get("medium"),
+            "iconUrls": card.get("iconUrls", {}),
+            "evolutionLevel": card.get("evolutionLevel", 0),
         })
 
     # Sort by score descending, only cards you've actually used
@@ -68,10 +70,17 @@ def get_used_decks(battles: list) -> list:
         seen.add(key)
 
         trophy_change = team.get("trophyChange", 0)
+        game_mode_raw = battle.get("gameMode")
+        if isinstance(game_mode_raw, dict):
+            game_mode = game_mode_raw.get("name", "Unknown")
+        elif isinstance(game_mode_raw, str):
+            game_mode = game_mode_raw
+        else:
+            game_mode = "Unknown"
         decks.append({
             "cards": cards,
             "trophyChange": trophy_change,
-            "gameMode": battle.get("gameMode", {}).get("name", "Unknown"),
+            "gameMode": game_mode,
         })
 
     return decks
