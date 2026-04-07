@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
+import { formatLevel } from './utils/levels'
 
 interface Card {
   name: string
@@ -125,7 +126,7 @@ export default function Home() {
               unoptimized
             />
             <div className="absolute bottom-0 right-0 bg-black/70 text-xs px-1 font-bold text-white">
-              {card.level}/{card.maxLevel}
+              {formatLevel(card.level, card.rarity)}
             </div>
           </div>
         ))}
