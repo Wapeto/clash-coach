@@ -121,6 +121,82 @@ def compute_upgrade_priorities(player: dict, battles: list) -> list:
     return results
 
 
+def compute_win_probability(player_score: dict, opponent_score: dict) -> float:
+    """
+    Estimate win probability (0–100) based on avg level difference.
+    Each level advantage ≈ 4% win rate swing (card stats scale ~10%/level;
+    roughly half that translates to match outcome at equal skill).
+    Clamped to [15, 85] — never claim certainty.
+    """
+    p_lvl = player_score.get("avg_level", 8.0)
+    o_lvl = opponent_score.get("avg_level", 8.0)
+    diff = p_lvl - o_lvl
+    raw = 0.50 + diff * 0.04
+    return round(max(0.15, min(0.85, raw)) * 100, 1)
+
+
+def _parse_game_mode(battle: dict) -> str:
+    raw = battle.get("gameMode")
+    if isinstance(raw, dict):
+        return raw.get("name", "Unknown")
+    if isinstance(raw, str):
+        return raw
+    return "Unknown"
+
+
+def get_last_battles(battles: list, player_collection: list, n: int = 5) -> list:
+    """
+    Return the last n battles with player deck, opponent deck, deck scores,
+    win probability, and match result.
+    """
+    card_lookup = {c["name"].lower(): c for c in player_collection}
+    result = []
+
+    for battle in battles[:n * 3]:  # scan up to 3× to skip battles with missing data
+        if len(result) >= n:
+            break
+
+        team = battle.get("team", [{}])[0]
+        opponent_entry = battle.get("opponent", [{}])[0]
+
+        player_cards = team.get("cards", [])
+        opponent_cards = opponent_entry.get("cards", [])
+        if not player_cards or not opponent_cards:
+            continue
+
+        trophy_change = team.get("trophyChange", 0)
+        match_result = "win" if trophy_change > 0 else "loss" if trophy_change < 0 else "draw"
+
+        # Enrich player cards with full collection data (evo/hero info)
+        enriched_player_cards = [card_lookup.get(c["name"].lower(), c) for c in player_cards]
+
+        player_score = compute_deck_score(enriched_player_cards)
+        opponent_score = compute_deck_score(opponent_cards)
+        win_prob = compute_win_probability(player_score, opponent_score)
+
+        result.append({
+            "battle_time": battle.get("battleTime", ""),
+            "game_mode": _parse_game_mode(battle),
+            "result": match_result,
+            "trophy_change": trophy_change,
+            "player_deck": {
+                "cards": enriched_player_cards,
+                "deck_score": player_score,
+            },
+            "opponent": {
+                "name": opponent_entry.get("name", "Opponent"),
+                "tag": opponent_entry.get("tag", ""),
+                "deck": {
+                    "cards": opponent_cards,
+                    "deck_score": opponent_score,
+                },
+            },
+            "win_probability": win_prob,
+        })
+
+    return result
+
+
 def get_used_decks(battles: list) -> list:
     decks = []
     seen = set()

@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from google.genai.errors import ClientError
 from .services.cr_api import get_player, get_battle_log
-from .services.analyzer import compute_upgrade_priorities, get_used_decks, compute_deck_score
+from .services.analyzer import compute_upgrade_priorities, get_used_decks, get_last_battles, compute_deck_score
 from .services.gemini import prompt_best_decks, prompt_upgrade_advice, prompt_deck_coach
 from .services.arena_rules import get_deck_constraints
 from .services.chain import (
@@ -82,10 +82,11 @@ def decks(mode: str = "fast"):
         constraints = get_deck_constraints(p.get("arena", {}))
 
         if mode == "deep":
+            last_battles_deep = get_last_battles(battles, p.get("cards", []), n=5)
             job_id = create_job()
             threading.Thread(
                 target=run_deck_chain,
-                args=(job_id, p, battles, priorities, used_decks, constraints),
+                args=(job_id, p, battles, priorities, used_decks, constraints, last_battles_deep),
                 daemon=True,
             ).start()
             return {"job_id": job_id, "status": "running"}
@@ -110,7 +111,14 @@ def decks(mode: str = "fast"):
         except Exception as e:
             logger.error(traceback.format_exc())
             advice = None
-        return {"decks": used_decks, "advice": advice, "collection": p.get("cards", [])}
+
+        last_battles = get_last_battles(battles, p.get("cards", []), n=5)
+        return {
+            "battles": last_battles,
+            "decks": used_decks,  # kept for AI context / coach endpoint compatibility
+            "advice": advice,
+            "collection": p.get("cards", []),
+        }
     except Exception as e:
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
@@ -144,6 +152,38 @@ def coach(deck_index: int, mode: str = "fast"):
             logger.error(traceback.format_exc())
             advice = _ai_error_msg(e)
         return {"deck": deck, "advice": advice}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/coach/battle/{battle_index}")
+def coach_battle(battle_index: int, mode: str = "fast"):
+    try:
+        p = get_player()
+        battles = get_battle_log()
+        last = get_last_battles(battles, p.get("cards", []), n=5)
+        if battle_index >= len(last):
+            raise HTTPException(status_code=404, detail="Battle index out of range")
+        enriched_cards = last[battle_index]["player_deck"]["cards"]
+
+        if mode == "deep":
+            job_id = create_job()
+            threading.Thread(
+                target=run_coach_chain,
+                args=(job_id, enriched_cards, p["trophies"]),
+                daemon=True,
+            ).start()
+            return {"job_id": job_id, "status": "running"}
+
+        try:
+            advice = prompt_deck_coach(enriched_cards, p["trophies"])
+        except Exception as e:
+            logger.error(traceback.format_exc())
+            advice = _ai_error_msg(e)
+        return {"advice": advice}
     except HTTPException:
         raise
     except Exception as e:

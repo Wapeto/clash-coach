@@ -15,6 +15,7 @@ from .gemini import (
     BestDecksResponse, MODEL,
 )
 from .arena_rules import DeckConstraints
+from .cache import cache_get, cache_set
 
 logger = logging.getLogger(__name__)
 
@@ -180,13 +181,23 @@ def run_upgrade_chain(job_id: str, player: dict, battles: list, priorities: list
 # Deck chain
 # ---------------------------------------------------------------------------
 
+_META_CACHE_KEY = "deck_meta_search"
+_META_CACHE_TTL = 86400  # 24 hours
+
+
 def _step_deck_meta_search(card_names: list[str]) -> str:
-    prompt = f"""Search for the current top Clash Royale ladder meta decks (Path of Legends / top ladder).
-Focus on decks that use cards from this collection: {', '.join(card_names[:20])}
+    cached = cache_get(_META_CACHE_KEY, ttl_seconds=_META_CACHE_TTL)
+    if cached:
+        logger.info("Meta search: using cached result (< 24h old)")
+        return cached
+
+    prompt = """Search for the current top Clash Royale ladder meta decks (Path of Legends / top ladder).
 Find the 5 strongest ladder archetypes right now from RoyaleAPI, StatsRoyale, or similar sources.
-List each archetype and its core cards. Be concise and factual.
+List each archetype, its core 8 cards, and its win condition. Be concise and factual.
 """
-    return ask_gemini(prompt)
+    result = ask_gemini(prompt)
+    cache_set(_META_CACHE_KEY, result)
+    return result
 
 
 def _step_deck_strategist(
@@ -261,6 +272,7 @@ def run_deck_chain(
     priorities: list,
     used_decks: list,
     constraints: DeckConstraints,
+    last_battles: list | None = None,
 ) -> None:
     try:
         _update_job(job_id, current_step="analyst")
@@ -281,6 +293,7 @@ def run_deck_chain(
             status="complete",
             current_step="done",
             result={
+                "battles": last_battles or [],
                 "decks": used_decks,
                 "advice": final.model_dump(),
                 "collection": player.get("cards", []),

@@ -21,13 +21,6 @@ interface Card {
   }
 }
 
-interface Deck {
-  cards: Card[]
-  trophyChange: number
-  gameMode: string
-  deck_score?: DeckScore
-}
-
 interface DeckScore {
   score: number
   avg_level: number
@@ -36,6 +29,25 @@ interface DeckScore {
   avg_elixir: number
   evo_hero_count: number
   weak_link: string | null
+}
+
+interface BattleDeck {
+  cards: Card[]
+  deck_score: DeckScore
+}
+
+interface Battle {
+  battle_time: string
+  game_mode: string
+  result: 'win' | 'loss' | 'draw'
+  trophy_change: number
+  player_deck: BattleDeck
+  opponent: {
+    name: string
+    tag: string
+    deck: BattleDeck
+  }
+  win_probability: number
 }
 
 interface SuggestedDeck {
@@ -48,7 +60,8 @@ interface SuggestedDeck {
 }
 
 interface DecksData {
-  decks: Deck[]
+  battles: Battle[]
+  decks: { cards: Card[] }[]  // kept for coach endpoint compat
   collection: Card[]
   advice: {
     ladder_decks: SuggestedDeck[]
@@ -131,7 +144,7 @@ export default function DecksPage() {
     setCoachLoading(true)
     setCoachJobId(null)
 
-    fetch(`${apiUrl}/coach/${index}?mode=${mode}`)
+    fetch(`${apiUrl}/coach/battle/${index}?mode=${mode}`)
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
@@ -355,78 +368,101 @@ export default function DecksPage() {
 
         {/* Recent Decks (Your actual run history) */}
         <div className="section-title">
-          Your Recent Decks — {data.decks.length} found
+          Last 5 Matches
         </div>
 
         <div className="space-y-4">
-          {data.decks.map((deck, i) => {
-            const avgElixir = (deck.cards.reduce((sum, c) => sum + c.elixirCost, 0) / deck.cards.length).toFixed(1)
+          {(data.battles ?? []).map((battle, i) => {
             const isCoaching = coachIndex === i
+            const resultColor = battle.result === 'win' ? 'text-green-400' : battle.result === 'loss' ? 'text-red-400' : 'text-zinc-400'
+            const resultBg = battle.result === 'win' ? 'bg-green-500/10 border-green-500/20' : battle.result === 'loss' ? 'bg-red-500/10 border-red-500/20' : 'bg-zinc-500/10 border-zinc-500/20'
+            const winPct = battle.win_probability
+            const winBarColor = winPct >= 60 ? 'bg-green-500' : winPct >= 45 ? 'bg-yellow-500' : 'bg-red-500'
 
             return (
               <div key={i} className={`glass-card overflow-hidden transition-all ${isCoaching ? 'ring-1 ring-purple-500/30' : ''}`}>
 
-                {/* Deck Header */}
-                <div className="flex items-center justify-between px-5 py-3 border-b border-white/5 bg-black/20 flex-wrap gap-2">
+                {/* Match Header */}
+                <div className={`flex items-center justify-between px-5 py-3 border-b border-white/5 bg-black/20 flex-wrap gap-2`}>
                   <div className="flex items-center gap-3 flex-wrap">
-                    <span className="gamemode-badge">{deck.gameMode}</span>
-                    <span className={`trophy-change ${deck.trophyChange > 0 ? 'trophy-win' : deck.trophyChange < 0 ? 'trophy-loss' : 'trophy-draw'}`}>
-                      {deck.trophyChange > 0 ? '+' : ''}{deck.trophyChange} 🏆
+                    <span className="gamemode-badge">{battle.game_mode}</span>
+                    <span className={`text-xs font-black px-2.5 py-1 rounded-full border ${resultBg} ${resultColor} uppercase tracking-wide`}>
+                      {battle.result === 'win' ? '✓ WIN' : battle.result === 'loss' ? '✗ LOSS' : '— DRAW'}
                     </span>
-                    <span className="text-zinc-500 text-xs font-semibold">
-                      ⚡ {avgElixir} avg
+                    <span className={`text-xs font-semibold ${battle.trophy_change > 0 ? 'text-green-400' : battle.trophy_change < 0 ? 'text-red-400' : 'text-zinc-500'}`}>
+                      {battle.trophy_change > 0 ? '+' : ''}{battle.trophy_change} 🏆
                     </span>
-                    {deck.deck_score && renderDeckScore(deck.deck_score)}
                   </div>
-                  <button
-                    onClick={() => handleCoach(i)}
-                    className="coach-btn"
-                  >
+                  <button onClick={() => handleCoach(i)} className="coach-btn">
                     🎓 {isCoaching && coachAdvice ? 'Hide Coach' : 'Get Coaching'}
                   </button>
                 </div>
 
-                {/* Deck Cards */}
-                <div className="px-5 py-4">
-                   <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-                    {deck.cards.map(card => (
-                      <div
-                        key={card.name}
-                        className={`group relative rounded-xl overflow-hidden border border-rarity-${card.rarity} bg-rarity-${card.rarity} transition-transform hover:scale-105`}
-                        title={`${card.name} — Lvl ${formatLevel(card.level, card.rarity)}`}
-                      >
-                        <Image
-                          src={card.iconUrls.heroMedium || card.iconUrls.medium}
-                          alt={card.name}
-                          width={80}
-                          height={80}
-                          className="w-full"
-                          unoptimized
-                        />
-                        <div className="absolute bottom-0 left-0 right-0 bg-black/80 text-center py-0.5">
-                          <span className="text-[10px] font-bold text-white">
-                            {formatLevel(card.level, card.rarity)}
-                          </span>
-                        </div>
-                        {/* Elixir cost badge */}
-                        <div className="absolute top-0 left-0 bg-purple-600/90 text-[9px] font-bold text-white px-1.5 py-0.5 rounded-br-lg z-10">
-                          {card.elixirCost}
-                        </div>
-                        
-                        {/* Evo Shard Indicator */}
-                        {(card as any).evolutionLevel > 0 && (card as any).iconUrls?.evolutionMedium && !(card as any).iconUrls?.heroMedium && (
-                          <div className="absolute top-1 right-1 w-4 h-4 flex items-center justify-center bg-fuchsia-600 border border-fuchsia-300 rounded-sm shadow-[0_0_8px_rgba(192,38,211,0.8)] rotate-45 z-20">
-                            <span className="-rotate-45 text-[8px] font-black text-white ml-[1px]">❖</span>
+                {/* Win probability bar */}
+                <div className="px-5 pt-3 pb-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold w-16 text-right shrink-0">You</span>
+                    <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full transition-all ${winBarColor}`} style={{ width: `${winPct}%` }} />
+                    </div>
+                    <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold w-16 shrink-0">Opponent</span>
+                  </div>
+                  <div className="flex justify-between px-0">
+                    <span className={`text-[11px] font-bold ml-16 ${winPct >= 50 ? 'text-green-400' : 'text-zinc-400'}`}>{winPct}%</span>
+                    <span className={`text-[11px] font-bold ${winPct < 50 ? 'text-red-400' : 'text-zinc-400'}`}>{(100 - winPct).toFixed(1)}%</span>
+                  </div>
+                </div>
+
+                {/* Decks side by side */}
+                <div className="px-5 pb-4 pt-2 grid md:grid-cols-2 gap-4">
+                  {/* Player deck */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Your Deck</span>
+                      {battle.player_deck.deck_score && renderDeckScore(battle.player_deck.deck_score)}
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {battle.player_deck.cards.map((card, ci) => (
+                        <div key={`p-${ci}`} className={`relative rounded-lg overflow-hidden border border-rarity-${card.rarity} bg-rarity-${card.rarity}`}>
+                          <Image src={(card as any).iconUrls?.heroMedium || (card as any).iconUrls?.medium || ''} alt={card.name} width={70} height={70} className="w-full" unoptimized />
+                          <div className="absolute bottom-0 left-0 right-0 bg-black/80 text-center py-0.5">
+                            <span className="text-[9px] font-bold text-white">{formatLevel(card.level, card.rarity)}</span>
                           </div>
-                        )}
-                        {/* Hero Indicator */}
-                        {(card as any).evolutionLevel > 0 && (card as any).iconUrls?.heroMedium && (
-                          <div className="absolute top-1 right-1 w-4 h-4 flex items-center justify-center bg-yellow-500 border border-yellow-200 rounded-sm z-20">
-                            <span className="text-[10px] font-black text-white ml-[1px] -mt-[1px]">★</span>
+                          <div className="absolute top-0 left-0 bg-purple-600/90 text-[8px] font-bold text-white px-1 py-0.5 rounded-br-md z-10">{(card as any).elixirCost}</div>
+                          {(card as any).evolutionLevel > 0 && (card as any).iconUrls?.evolutionMedium && !(card as any).iconUrls?.heroMedium && (
+                            <div className="absolute top-0.5 right-0.5 w-3.5 h-3.5 flex items-center justify-center bg-fuchsia-600 border border-fuchsia-300 rounded-sm rotate-45 z-20">
+                              <span className="-rotate-45 text-[7px] font-black text-white">❖</span>
+                            </div>
+                          )}
+                          {(card as any).evolutionLevel > 0 && (card as any).iconUrls?.heroMedium && (
+                            <div className="absolute top-0.5 right-0.5 w-3.5 h-3.5 flex items-center justify-center bg-yellow-500 border border-yellow-200 rounded-sm z-20">
+                              <span className="text-[9px] font-black text-white">★</span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Opponent deck */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
+                        {battle.opponent.name}
+                      </span>
+                      {battle.opponent.deck.deck_score && renderDeckScore(battle.opponent.deck.deck_score)}
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {battle.opponent.deck.cards.map((card, ci) => (
+                        <div key={`o-${ci}`} className={`relative rounded-lg overflow-hidden border border-rarity-${card.rarity} bg-rarity-${card.rarity} opacity-80`}>
+                          <Image src={(card as any).iconUrls?.medium || ''} alt={card.name} width={70} height={70} className="w-full" unoptimized />
+                          <div className="absolute bottom-0 left-0 right-0 bg-black/80 text-center py-0.5">
+                            <span className="text-[9px] font-bold text-white">{formatLevel(card.level, card.rarity)}</span>
                           </div>
-                        )}
-                      </div>
-                    ))}
+                          <div className="absolute top-0 left-0 bg-zinc-700/90 text-[8px] font-bold text-white px-1 py-0.5 rounded-br-md z-10">{(card as any).elixirCost}</div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
