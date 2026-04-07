@@ -1,20 +1,20 @@
 import os
-from openai import OpenAI
+from google import genai
 from dotenv import load_dotenv
 
 load_dotenv()
 
-client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPENROUTER_API_KEY"),
-)
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+MODEL = "gemini-2.5-flash"
+
 
 def ask_gemini(prompt: str) -> str:
-    response = client.chat.completions.create(
-        model="deepseek/deepseek-r1-0528:free",
-        messages=[{"role": "user", "content": prompt}]
+    response = client.models.generate_content(
+        model=MODEL,
+        contents=prompt,
     )
-    return response.choices[0].message.content
+    return response.text
 
 
 
