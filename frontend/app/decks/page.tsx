@@ -25,6 +25,17 @@ interface Deck {
   cards: Card[]
   trophyChange: number
   gameMode: string
+  deck_score?: DeckScore
+}
+
+interface DeckScore {
+  score: number
+  avg_level: number
+  min_level: number
+  level_pct: number
+  avg_elixir: number
+  evo_hero_count: number
+  weak_link: string | null
 }
 
 interface SuggestedDeck {
@@ -33,6 +44,7 @@ interface SuggestedDeck {
   cards: string[]
   why_it_fits: string
   win_condition: string
+  deck_score?: DeckScore
 }
 
 interface DecksData {
@@ -138,6 +150,29 @@ export default function DecksPage() {
       })
   }
 
+  const renderDeckScore = (ds: DeckScore) => {
+    const { score, avg_level, weak_link, evo_hero_count } = ds
+    const color =
+      score >= 80 ? { bg: 'bg-green-500/20', border: 'border-green-500/40', text: 'text-green-400' }
+      : score >= 60 ? { bg: 'bg-blue-500/20', border: 'border-blue-500/40', text: 'text-blue-400' }
+      : score >= 40 ? { bg: 'bg-yellow-500/20', border: 'border-yellow-500/40', text: 'text-yellow-400' }
+      : { bg: 'bg-red-500/20', border: 'border-red-500/40', text: 'text-red-400' }
+    const label = score >= 80 ? 'Strong' : score >= 60 ? 'Good' : score >= 40 ? 'Fair' : 'Weak'
+    return (
+      <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${color.bg} ${color.border}`}>
+        <div className="text-center">
+          <p className={`text-sm font-black leading-none ${color.text}`}>{Math.round(score)}</p>
+          <p className="text-[9px] text-zinc-500 mt-0.5">{label}</p>
+        </div>
+        <div className="border-l border-white/10 pl-2 text-[10px] text-zinc-400 leading-snug">
+          <p>Avg Lvl <span className="font-bold text-zinc-300">{avg_level}</span></p>
+          {evo_hero_count > 0 && <p className="text-fuchsia-400 font-semibold">{evo_hero_count} Evo/Hero</p>}
+          {weak_link && <p className="text-yellow-500">⚠ {weak_link}</p>}
+        </div>
+      </div>
+    )
+  }
+
   const renderCardList = (cardNames: string[]) => {
     return (
       <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 my-4">
@@ -194,11 +229,12 @@ export default function DecksPage() {
     return (
       <div className="glass-card overflow-hidden mb-6">
         <div className="px-5 py-4 border-b border-white/5 bg-white/5">
-          <div className="flex items-center gap-3 mb-1">
+          <div className="flex items-center gap-3 flex-wrap mb-1">
             <span className="text-xl font-bold text-white">{titlePrefix}: {deck.deck_name}</span>
             <span className="px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-300 text-xs font-semibold border border-blue-500/30">
               {deck.archetype}
             </span>
+            {deck.deck_score && renderDeckScore(deck.deck_score)}
           </div>
         </div>
         <div className="px-5 py-2">
@@ -331,8 +367,8 @@ export default function DecksPage() {
               <div key={i} className={`glass-card overflow-hidden transition-all ${isCoaching ? 'ring-1 ring-purple-500/30' : ''}`}>
 
                 {/* Deck Header */}
-                <div className="flex items-center justify-between px-5 py-3 border-b border-white/5 bg-black/20">
-                  <div className="flex items-center gap-3">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-white/5 bg-black/20 flex-wrap gap-2">
+                  <div className="flex items-center gap-3 flex-wrap">
                     <span className="gamemode-badge">{deck.gameMode}</span>
                     <span className={`trophy-change ${deck.trophyChange > 0 ? 'trophy-win' : deck.trophyChange < 0 ? 'trophy-loss' : 'trophy-draw'}`}>
                       {deck.trophyChange > 0 ? '+' : ''}{deck.trophyChange} 🏆
@@ -340,6 +376,7 @@ export default function DecksPage() {
                     <span className="text-zinc-500 text-xs font-semibold">
                       ⚡ {avgElixir} avg
                     </span>
+                    {deck.deck_score && renderDeckScore(deck.deck_score)}
                   </div>
                   <button
                     onClick={() => handleCoach(i)}

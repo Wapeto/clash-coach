@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from google.genai.errors import ClientError
 from .services.cr_api import get_player, get_battle_log
-from .services.analyzer import compute_upgrade_priorities, get_used_decks
+from .services.analyzer import compute_upgrade_priorities, get_used_decks, compute_deck_score
 from .services.gemini import prompt_best_decks, prompt_upgrade_advice, prompt_deck_coach
 from .services.arena_rules import get_deck_constraints
 from .services.chain import (
@@ -90,9 +90,23 @@ def decks(mode: str = "fast"):
             ).start()
             return {"job_id": job_id, "status": "running"}
 
+        # Enrich recent decks with player collection data and deck score
+        card_lookup = {c["name"].lower(): c for c in p.get("cards", [])}
+        for deck in used_decks:
+            enriched = [card_lookup.get(c["name"].lower(), c) for c in deck["cards"]]
+            deck["deck_score"] = compute_deck_score(enriched)
+
         try:
             ai_advice = prompt_best_decks(p, priorities, used_decks, constraints)
             advice = ai_advice.model_dump()
+            # Attach deck score to each AI-suggested deck using player's actual card levels
+            for suggested in advice.get("ladder_decks", []):
+                cards = [card_lookup.get(n.lower(), {"level": 1, "rarity": "common"}) for n in suggested["cards"]]
+                suggested["deck_score"] = compute_deck_score(cards)
+            cw = advice.get("clan_war_deck")
+            if cw:
+                cards = [card_lookup.get(n.lower(), {"level": 1, "rarity": "common"}) for n in cw["cards"]]
+                cw["deck_score"] = compute_deck_score(cards)
         except Exception as e:
             logger.error(traceback.format_exc())
             advice = None
