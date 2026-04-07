@@ -274,7 +274,7 @@ def run_deck_chain(
     constraints: DeckConstraints,
     last_battles: list | None = None,
 ) -> None:
-    from .analyzer import compute_deck_score
+    from .analyzer import compute_deck_score, normalize_card_name
     try:
         _update_job(job_id, current_step="analyst")
         report = _step_analyst(player, battles, priorities)
@@ -293,11 +293,11 @@ def run_deck_chain(
         card_lookup = {c["name"].lower(): c for c in player.get("cards", [])}
         try:
             for suggested in advice.get("ladder_decks", []):
-                cards = [card_lookup.get(n.lower(), {"level": 1, "rarity": "common"}) for n in suggested["cards"]]
+                cards = [card_lookup.get(normalize_card_name(n).lower(), {"level": 1, "rarity": "common", "name": n}) for n in suggested["cards"]]
                 suggested["deck_score"] = compute_deck_score(cards, constraints)
             cw = advice.get("clan_war_deck")
             if cw:
-                cards = [card_lookup.get(n.lower(), {"level": 1, "rarity": "common"}) for n in cw["cards"]]
+                cards = [card_lookup.get(normalize_card_name(n).lower(), {"level": 1, "rarity": "common", "name": n}) for n in cw["cards"]]
                 cw["deck_score"] = compute_deck_score(cards, constraints)
         except Exception:
             logger.error(traceback.format_exc())

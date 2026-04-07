@@ -1,4 +1,12 @@
+import re
 from collections import defaultdict
+
+_EVO_SUFFIX = re.compile(r'\s*\((EVOLVED?|HERO|EVO)\)\s*$', re.IGNORECASE)
+
+
+def normalize_card_name(name: str) -> str:
+    """Strip (EVOLVED)/(HERO)/(EVO) suffixes that AI sometimes adds."""
+    return _EVO_SUFFIX.sub('', name).strip()
 
 _START_LEVELS = {"common": 1, "rare": 3, "epic": 6, "legendary": 9, "champion": 11}
 _MAX_GAME_LEVEL = 16
@@ -139,15 +147,15 @@ def compute_upgrade_priorities(player: dict, battles: list) -> list:
 
 def compute_win_probability(player_score: dict, opponent_score: dict) -> float:
     """
-    Estimate win probability (0–100) based on avg level difference.
-    Each level advantage ≈ 4% win rate swing (card stats scale ~10%/level;
-    roughly half that translates to match outcome at equal skill).
+    Estimate win probability (0–100) using deck score as primary factor.
+    Deck score captures levels, consistency, elixir curve, and evo/hero presence.
+    Each 10-point deck score difference ≈ 8% win rate swing.
     Clamped to [15, 85] — never claim certainty.
     """
-    p_lvl = player_score.get("avg_level", 8.0)
-    o_lvl = opponent_score.get("avg_level", 8.0)
-    diff = p_lvl - o_lvl
-    raw = 0.50 + diff * 0.04
+    p_score = player_score.get("score", 50.0)
+    o_score = opponent_score.get("score", 50.0)
+    diff = p_score - o_score
+    raw = 0.50 + diff * 0.008
     return round(max(0.15, min(0.85, raw)) * 100, 1)
 
 

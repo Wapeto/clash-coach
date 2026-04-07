@@ -248,11 +248,23 @@ export default function DecksPage() {
     return ''
   }
 
+  // Slot type based solely on card type — used for battle history (no slot limits applied)
+  function cardSlotType(card: Card): SlotType {
+    const isHero = (card as any).evolutionLevel > 0 && card.iconUrls?.heroMedium
+    const isEvo = (card as any).evolutionLevel > 0 && card.iconUrls?.evolutionMedium && !card.iconUrls?.heroMedium
+    return isHero ? 'hero' : isEvo ? 'evo' : 'regular'
+  }
+
+  // Strip (EVOLVED)/(HERO) suffixes AI sometimes appends to card names
+  function normalizeCardName(name: string): string {
+    return name.replace(/\s*\((EVOLVED?|HERO|EVO)\)\s*$/i, '').trim()
+  }
+
   const renderCardList = (cardNames: string[]) => {
-    const resolved = cardNames.map(name => collection.find(c => c.name.toLowerCase() === name.toLowerCase()) ?? null)
+    const resolved = cardNames.map(name => collection.find(c => c.name.toLowerCase() === normalizeCardName(name).toLowerCase()) ?? null)
     const validCards = resolved.filter(Boolean) as Card[]
     const slotted = assignSlots(validCards, constraints)
-    const notFound = cardNames.filter(n => !collection.find(c => c.name.toLowerCase() === n.toLowerCase()))
+    const notFound = cardNames.filter(n => !collection.find(c => c.name.toLowerCase() === normalizeCardName(n).toLowerCase()))
 
     return (
       <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 my-4">
@@ -476,8 +488,8 @@ export default function DecksPage() {
                       {battle.player_deck.deck_score && renderDeckScore(battle.player_deck.deck_score)}
                     </div>
                     <div className="grid grid-cols-4 gap-1.5">
-                      {assignSlots(battle.player_deck.cards, constraints).map(({ card, slot }, ci) => (
-                        <div key={`p-${ci}`} className={`relative rounded-lg overflow-hidden border border-rarity-${card.rarity} ${slotContainerClass(slot)}`}>
+                      {battle.player_deck.cards.map((card, ci) => (
+                        <div key={`p-${ci}`} className={`relative rounded-lg overflow-hidden border border-rarity-${card.rarity} ${slotContainerClass(cardSlotType(card))}`}>
                           <Image src={(card as any).iconUrls?.heroMedium || (card as any).iconUrls?.medium || ''} alt={card.name} width={70} height={70} className="w-full" unoptimized />
                           <div className="absolute bottom-0 left-0 right-0 bg-black/80 text-center py-0.5">
                             <span className="text-[9px] font-bold text-white">{formatLevel(card.level, card.rarity)}</span>

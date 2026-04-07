@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from google.genai.errors import ClientError
 from .services.cr_api import get_player, get_battle_log
-from .services.analyzer import compute_upgrade_priorities, get_used_decks, get_last_battles, compute_deck_score
+from .services.analyzer import compute_upgrade_priorities, get_used_decks, get_last_battles, compute_deck_score, normalize_card_name
 from .services.gemini import prompt_best_decks, prompt_upgrade_advice, prompt_deck_coach
 from .services.arena_rules import get_deck_constraints
 from .services.chain import (
@@ -140,14 +140,14 @@ def decks_suggestions(mode: str = "fast", tag: str = None):
             logger.error(traceback.format_exc())
             raise HTTPException(status_code=503, detail=_ai_error_msg(e))
 
-        # Enrich suggested decks with algorithmic scores
+        # Enrich suggested decks with algorithmic scores (normalize AI card names first)
         try:
             for suggested in advice.get("ladder_decks", []):
-                cards = [card_lookup.get(n.lower(), {"level": 1, "rarity": "common"}) for n in suggested["cards"]]
+                cards = [card_lookup.get(normalize_card_name(n).lower(), {"level": 1, "rarity": "common", "name": n}) for n in suggested["cards"]]
                 suggested["deck_score"] = compute_deck_score(cards, constraints)
             cw = advice.get("clan_war_deck")
             if cw:
-                cards = [card_lookup.get(n.lower(), {"level": 1, "rarity": "common"}) for n in cw["cards"]]
+                cards = [card_lookup.get(normalize_card_name(n).lower(), {"level": 1, "rarity": "common", "name": n}) for n in cw["cards"]]
                 cw["deck_score"] = compute_deck_score(cards, constraints)
         except Exception:
             logger.error(traceback.format_exc())
