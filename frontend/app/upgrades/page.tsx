@@ -25,100 +25,87 @@ interface Priority {
   }
 }
 
-interface UpgradeData {
-  priorities: Priority[]
-  advice: string
-}
-
 export default function UpgradesPage() {
-  const [data, setData] = useState<UpgradeData | null>(null)
+  const [priorities, setPriorities] = useState<Priority[]>([])
+  const [advice, setAdvice] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [adviceLoading, setAdviceLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showUnused, setShowUnused] = useState(false)
-  const [upgradesJobId, setUpgradesJobId] = useState<string | null>(null)
+  const [adviceJobId, setAdviceJobId] = useState<string | null>(null)
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? ''
   const fetchedRef = useRef(false)
-  const upgradesJob = useChainPolling(upgradesJobId, apiUrl)
+  const adviceJob = useChainPolling(adviceJobId, apiUrl)
 
+  // Poll for deep mode advice job completion
   useEffect(() => {
-    if (upgradesJob?.status === 'complete' && upgradesJob.result) {
-      setData(upgradesJob.result as UpgradeData)
-      setLoading(false)
-      setUpgradesJobId(null)
-    } else if (upgradesJob?.status === 'error') {
-      setLoading(false)
-      setUpgradesJobId(null)
+    if (adviceJob?.status === 'complete' && adviceJob.result) {
+      setAdvice((adviceJob.result as { advice: string }).advice)
+      setAdviceLoading(false)
+      setAdviceJobId(null)
+    } else if (adviceJob?.status === 'error') {
+      setAdvice(null)
+      setAdviceLoading(false)
+      setAdviceJobId(null)
     }
-  }, [upgradesJob])
+  }, [adviceJob])
 
   useEffect(() => {
     if (fetchedRef.current) return
     fetchedRef.current = true
+
+    const tagParam = getTagParam()  // "&tag=xxx" or ""
+    const tagQ = tagParam ? tagParam.slice(1) : ''  // "tag=xxx" or ""
     const mode = getApiMode()
-    fetch(`${apiUrl}/upgrades?mode=${mode}${getTagParam()}`)
+
+    // Fetch 1: priority list (fast, algorithmic, cached)
+    fetch(`${apiUrl}/upgrades${tagQ ? '?' + tagQ : ''}`)
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
+      .then(d => {
+        setPriorities(d.priorities ?? [])
+        setLoading(false)
+      })
+      .catch(e => {
+        setError(e.message)
+        setLoading(false)
+      })
+
+    // Fetch 2: AI advice (slow, fires in parallel)
+    fetch(`${apiUrl}/upgrades/advice?mode=${mode}${tagParam}`)
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       })
       .then(d => {
         if (d.job_id) {
-          setUpgradesJobId(d.job_id)
+          setAdviceJobId(d.job_id)
         } else {
-          setData(d)
-          setLoading(false)
+          setAdvice(d.advice)
+          setAdviceLoading(false)
         }
       })
-      .catch(e => {
-        setLoading(false)
-        console.error(e)
-      })
+      .catch(() => setAdviceLoading(false))
   }, [])
 
   if (loading) return (
     <main className="min-h-screen bg-mesh flex items-center justify-center px-4">
       <div className="text-center max-w-md w-full">
-        {/* Animated icon */}
         <div className="relative mx-auto mb-8 w-24 h-24">
           <div className="absolute inset-0 rounded-full border-4 border-purple-500/20 border-t-purple-500 animate-spin" />
           <div className="absolute inset-3 rounded-full border-4 border-fuchsia-500/20 border-b-fuchsia-500 animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }} />
           <div className="absolute inset-0 flex items-center justify-center text-3xl">📈</div>
         </div>
-
-        {/* Main message */}
-        <h2 className="text-xl font-bold text-white mb-2">
-          {upgradesJob ? (STEP_LABELS[upgradesJob.current_step] ?? 'Processing...') : 'Analyzing your cards...'}
-        </h2>
-        <p className="text-zinc-500 text-sm mb-6">
-          {upgradesJob ? '🔬 Deep analysis in progress — ~20s' : 'AI is crunching your battle data'}
-        </p>
-
-        {/* Step progress */}
-        {upgradesJob && (
-          <div className="glass-card p-4 text-left space-y-2">
-            {(['analyst', 'strategist', 'fact_checker'] as const).map((step, i) => {
-              const steps = ['analyst', 'strategist', 'fact_checker']
-              const currentIdx = steps.indexOf(upgradesJob.current_step)
-              const isDone = steps.indexOf(step) < currentIdx
-              const isCurrent = upgradesJob.current_step === step
-              return (
-                <div key={step} className={`flex items-center gap-3 text-sm transition-all ${isDone ? 'text-green-400' : isCurrent ? 'text-white' : 'text-zinc-600'}`}>
-                  <span className="text-base">{isDone ? '✓' : isCurrent ? '⟳' : '○'}</span>
-                  <span className={isCurrent ? 'font-semibold' : ''}>{STEP_LABELS[step] ?? step}</span>
-                  {isCurrent && <span className="ml-auto w-3 h-3 rounded-full bg-purple-500 animate-pulse" />}
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        {!upgradesJob && (
-          <div className="flex justify-center gap-1.5">
-            {[0, 1, 2, 3].map(i => (
-              <div key={i} className="w-2 h-2 rounded-full bg-purple-500/60 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
-            ))}
-          </div>
-        )}
+        <h2 className="text-xl font-bold text-white mb-2">Analyzing your cards...</h2>
+        <p className="text-zinc-500 text-sm mb-6">Loading upgrade priorities</p>
+        <div className="flex justify-center gap-1.5">
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} className="w-2 h-2 rounded-full bg-purple-500/60 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+          ))}
+        </div>
       </div>
     </main>
   )
@@ -133,10 +120,8 @@ export default function UpgradesPage() {
     </main>
   )
 
-  if (!data) return null
-
-  const usedCards = data.priorities.filter(p => p.appearances > 0)
-  const unusedCards = data.priorities.filter(p => p.appearances === 0)
+  const usedCards = priorities.filter(p => p.appearances > 0)
+  const unusedCards = priorities.filter(p => p.appearances === 0)
 
   return (
     <main className="min-h-screen bg-mesh">
@@ -151,7 +136,7 @@ export default function UpgradesPage() {
           <p className="text-zinc-500 text-sm mt-1">AI-powered analysis of which cards to level up first</p>
         </div>
 
-        {/* AI Advice */}
+        {/* AI Advice — shows loading state while AI works */}
         <div className="glass-card p-6 mb-10">
           <div className="flex items-center gap-2 mb-5">
             <span className="text-lg">🤖</span>
@@ -160,9 +145,39 @@ export default function UpgradesPage() {
               Live Meta
             </span>
           </div>
-          <div className="ai-prose">
-            <ReactMarkdown>{data.advice}</ReactMarkdown>
-          </div>
+
+          {adviceLoading ? (
+            <div>
+              {adviceJob ? (
+                <div className="space-y-2">
+                  {(['analyst', 'strategist', 'fact_checker'] as const).map((step) => {
+                    const steps = ['analyst', 'strategist', 'fact_checker']
+                    const currentIdx = steps.indexOf(adviceJob.current_step)
+                    const isDone = steps.indexOf(step) < currentIdx
+                    const isCurrent = adviceJob.current_step === step
+                    return (
+                      <div key={step} className={`flex items-center gap-3 text-sm transition-all ${isDone ? 'text-green-400' : isCurrent ? 'text-white' : 'text-zinc-600'}`}>
+                        <span className="text-base">{isDone ? '✓' : isCurrent ? '⟳' : '○'}</span>
+                        <span className={isCurrent ? 'font-semibold' : ''}>{STEP_LABELS[step] ?? step}</span>
+                        {isCurrent && <span className="ml-auto w-3 h-3 rounded-full bg-purple-500 animate-pulse" />}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <div className="w-4 h-4 border-2 border-purple-500/30 border-t-purple-500 rounded-full animate-spin shrink-0" />
+                  <p className="text-zinc-500 text-sm">AI is analyzing the meta...</p>
+                </div>
+              )}
+            </div>
+          ) : advice ? (
+            <div className="ai-prose">
+              <ReactMarkdown>{advice}</ReactMarkdown>
+            </div>
+          ) : (
+            <p className="text-zinc-500 text-sm">AI advice unavailable.</p>
+          )}
         </div>
 
         {/* Cards you use */}
@@ -186,7 +201,7 @@ export default function UpgradesPage() {
                   <div className={`text-sm font-black ${isTop5 ? 'text-purple-400' : 'text-zinc-500'}`}>
                     #{i + 1}
                   </div>
-                  
+
                   {card.iconUrl && (
                     <div className={`relative w-14 h-14 rounded-lg overflow-hidden border-2 border-rarity-${card.rarity} bg-rarity-${card.rarity}`}>
                       <Image
@@ -197,13 +212,11 @@ export default function UpgradesPage() {
                         className="w-full h-full object-cover"
                         unoptimized
                       />
-                      {/* Evo Shard Indicator */}
                       {(card as any).evolutionLevel > 0 && card.iconUrls?.evolutionMedium && !card.iconUrls?.heroMedium && (
                         <div className="absolute top-0 right-0 w-4 h-4 flex items-center justify-center bg-fuchsia-600 border border-fuchsia-300 rounded-sm rotate-45 z-20 transform translate-x-1 -translate-y-1">
                           <span className="-rotate-45 text-[8px] font-black text-white ml-[1px]">❖</span>
                         </div>
                       )}
-                      {/* Hero Indicator */}
                       {(card as any).evolutionLevel > 0 && card.iconUrls?.heroMedium && (
                         <div className="absolute top-0 left-0 w-4 h-4 flex items-center justify-center bg-yellow-500 border border-yellow-200 rounded-sm z-20 transform -translate-x-1 -translate-y-1">
                           <span className="text-[10px] font-black text-white ml-[1px] -mt-[1px]">★</span>

@@ -14,8 +14,8 @@ interface Card {
   maxLevel: number
   rarity: string
   elixirCost: number
-  iconUrls: { 
-    medium: string 
+  iconUrls: {
+    medium: string
     evolutionMedium?: string
     heroMedium?: string
   }
@@ -68,43 +68,45 @@ interface Constraints {
   max_evo_or_hero: number
 }
 
-interface DecksData {
-  battles: Battle[]
-  decks: { cards: Card[] }[]
-  collection: Card[]
-  advice: {
-    ladder_decks: SuggestedDeck[]
-    clan_war_deck: SuggestedDeck
-  } | null
-  constraints: Constraints
+const DEFAULT_CONSTRAINTS: Constraints = {
+  evo_slots: 0, hero_slots: 0, wild_slots: 0,
+  max_evos: 0, max_heroes: 0, max_evo_or_hero: 0,
+}
+
+interface Suggestions {
+  ladder_decks: SuggestedDeck[]
+  clan_war_deck: SuggestedDeck
 }
 
 export default function DecksPage() {
-  const [data, setData] = useState<DecksData | null>(null)
+  const [battles, setBattles] = useState<Battle[]>([])
+  const [collection, setCollection] = useState<Card[]>([])
+  const [constraints, setConstraints] = useState<Constraints>(DEFAULT_CONSTRAINTS)
+  const [suggestions, setSuggestions] = useState<Suggestions | null>(null)
   const [loading, setLoading] = useState(true)
+  const [suggestionsLoading, setSuggestionsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [coachIndex, setCoachIndex] = useState<number | null>(null)
   const [coachAdvice, setCoachAdvice] = useState<string | null>(null)
   const [coachLoading, setCoachLoading] = useState(false)
   const [coachJobId, setCoachJobId] = useState<string | null>(null)
-  const [decksJobId, setDecksJobId] = useState<string | null>(null)
+  const [suggestionsJobId, setSuggestionsJobId] = useState<string | null>(null)
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? ''
   const fetchedRef = useRef(false)
-  const decksJob = useChainPolling(decksJobId, apiUrl)
+  const suggestionsJob = useChainPolling(suggestionsJobId, apiUrl)
   const coachJob = useChainPolling(coachJobId, apiUrl)
 
   useEffect(() => {
-    if (decksJob?.status === 'complete' && decksJob.result) {
-      setData(decksJob.result as DecksData)
-      setLoading(false)
-      setDecksJobId(null)
-    } else if (decksJob?.status === 'error') {
-      setError(decksJob.error ?? 'Deep analysis failed')
-      setLoading(false)
-      setDecksJobId(null)
+    if (suggestionsJob?.status === 'complete' && suggestionsJob.result) {
+      setSuggestions(suggestionsJob.result as Suggestions)
+      setSuggestionsLoading(false)
+      setSuggestionsJobId(null)
+    } else if (suggestionsJob?.status === 'error') {
+      setSuggestionsLoading(false)
+      setSuggestionsJobId(null)
     }
-  }, [decksJob])
+  }, [suggestionsJob])
 
   useEffect(() => {
     if (coachJob?.status === 'complete' && coachJob.result) {
@@ -122,24 +124,43 @@ export default function DecksPage() {
   useEffect(() => {
     if (fetchedRef.current) return
     fetchedRef.current = true
+
+    const tagParam = getTagParam()  // "&tag=xxx" or ""
+    const tagQ = tagParam ? tagParam.slice(1) : ''  // "tag=xxx" or ""
     const mode = getApiMode()
-    fetch(`${apiUrl}/decks?mode=${mode}${getTagParam()}`)
+
+    // Fetch 1: battles + collection + constraints (fast, cached, no AI)
+    fetch(`${apiUrl}/decks${tagQ ? '?' + tagQ : ''}`)
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
+      .then(d => {
+        setBattles(d.battles ?? [])
+        setCollection(d.collection ?? [])
+        setConstraints(d.constraints ?? DEFAULT_CONSTRAINTS)
+        setLoading(false)
+      })
+      .catch(e => {
+        setError(e.message)
+        setLoading(false)
+      })
+
+    // Fetch 2: AI deck suggestions (slow, fires in parallel)
+    fetch(`${apiUrl}/decks/suggestions?mode=${mode}${tagParam}`)
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       })
       .then(d => {
         if (d.job_id) {
-          setDecksJobId(d.job_id)
+          setSuggestionsJobId(d.job_id)
         } else {
-          setData(d)
-          setLoading(false)
+          setSuggestions(d as Suggestions)
+          setSuggestionsLoading(false)
         }
       })
-      .catch(e => {
-        setError(e.message)
-        setLoading(false)
-      })
+      .catch(() => setSuggestionsLoading(false))
   }, [])
 
   const handleCoach = (index: number) => {
@@ -228,12 +249,10 @@ export default function DecksPage() {
   }
 
   const renderCardList = (cardNames: string[]) => {
-    const constraints = data?.constraints ?? { evo_slots: 0, hero_slots: 0, wild_slots: 0, max_evos: 0, max_heroes: 0, max_evo_or_hero: 0 }
-    const resolved = cardNames.map(name => data?.collection.find(c => c.name.toLowerCase() === name.toLowerCase()) ?? null)
+    const resolved = cardNames.map(name => collection.find(c => c.name.toLowerCase() === name.toLowerCase()) ?? null)
     const validCards = resolved.filter(Boolean) as Card[]
     const slotted = assignSlots(validCards, constraints)
-    // Track which names had no match
-    const notFound = cardNames.filter(n => !data?.collection.find(c => c.name.toLowerCase() === n.toLowerCase()))
+    const notFound = cardNames.filter(n => !collection.find(c => c.name.toLowerCase() === n.toLowerCase()))
 
     return (
       <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 my-4">
@@ -311,47 +330,18 @@ export default function DecksPage() {
   if (loading) return (
     <main className="min-h-screen bg-mesh flex items-center justify-center px-4">
       <div className="text-center max-w-md w-full">
-        {/* Animated icon */}
         <div className="relative mx-auto mb-8 w-24 h-24">
           <div className="absolute inset-0 rounded-full border-4 border-blue-500/20 border-t-blue-500 animate-spin" />
           <div className="absolute inset-3 rounded-full border-4 border-cyan-500/20 border-b-cyan-500 animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }} />
           <div className="absolute inset-0 flex items-center justify-center text-3xl">🃏</div>
         </div>
-
-        {/* Main message */}
-        <h2 className="text-xl font-bold text-white mb-2">
-          {decksJob ? (STEP_LABELS[decksJob.current_step] ?? 'Processing...') : 'Analyzing your decks...'}
-        </h2>
-        <p className="text-zinc-500 text-sm mb-6">
-          {decksJob ? '🔬 Deep analysis in progress — ~20s' : 'AI is finding the best strategies'}
-        </p>
-
-        {/* Step progress */}
-        {decksJob && (
-          <div className="glass-card p-4 text-left space-y-2">
-            {(['analyst', 'meta_search', 'strategist', 'fact_checker'] as const).map((step) => {
-              const steps = ['analyst', 'meta_search', 'strategist', 'fact_checker']
-              const currentIdx = steps.indexOf(decksJob.current_step)
-              const isDone = steps.indexOf(step) < currentIdx
-              const isCurrent = decksJob.current_step === step
-              return (
-                <div key={step} className={`flex items-center gap-3 text-sm transition-all ${isDone ? 'text-green-400' : isCurrent ? 'text-white' : 'text-zinc-600'}`}>
-                  <span className="text-base">{isDone ? '✓' : isCurrent ? '⟳' : '○'}</span>
-                  <span className={isCurrent ? 'font-semibold' : ''}>{STEP_LABELS[step] ?? step}</span>
-                  {isCurrent && <span className="ml-auto w-3 h-3 rounded-full bg-blue-500 animate-pulse" />}
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        {!decksJob && (
-          <div className="flex justify-center gap-1.5">
-            {[0, 1, 2, 3].map(i => (
-              <div key={i} className="w-2 h-2 rounded-full bg-blue-500/60 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
-            ))}
-          </div>
-        )}
+        <h2 className="text-xl font-bold text-white mb-2">Loading your battles...</h2>
+        <p className="text-zinc-500 text-sm mb-6">Fetching match history</p>
+        <div className="flex justify-center gap-1.5">
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} className="w-2 h-2 rounded-full bg-blue-500/60 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+          ))}
+        </div>
       </div>
     </main>
   )
@@ -365,8 +355,6 @@ export default function DecksPage() {
       </div>
     </main>
   )
-
-  if (!data) return null
 
   return (
     <main className="min-h-screen bg-mesh">
@@ -391,14 +379,39 @@ export default function DecksPage() {
             </span>
           </div>
 
-          {data.advice ? (
+          {suggestionsLoading ? (
+            <div className="glass-card p-6">
+              {suggestionsJob ? (
+                <div className="space-y-2">
+                  {(['analyst', 'meta_search', 'strategist', 'fact_checker'] as const).map((step) => {
+                    const steps = ['analyst', 'meta_search', 'strategist', 'fact_checker']
+                    const currentIdx = steps.indexOf(suggestionsJob.current_step)
+                    const isDone = steps.indexOf(step) < currentIdx
+                    const isCurrent = suggestionsJob.current_step === step
+                    return (
+                      <div key={step} className={`flex items-center gap-3 text-sm transition-all ${isDone ? 'text-green-400' : isCurrent ? 'text-white' : 'text-zinc-600'}`}>
+                        <span className="text-base">{isDone ? '✓' : isCurrent ? '⟳' : '○'}</span>
+                        <span className={isCurrent ? 'font-semibold' : ''}>{STEP_LABELS[step] ?? step}</span>
+                        {isCurrent && <span className="ml-auto w-3 h-3 rounded-full bg-blue-500 animate-pulse" />}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <div className="w-4 h-4 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin shrink-0" />
+                  <p className="text-zinc-500 text-sm">AI is building deck suggestions...</p>
+                </div>
+              )}
+            </div>
+          ) : suggestions ? (
             <>
-              {data.advice.ladder_decks.map((deck, i) => (
+              {suggestions.ladder_decks.map((deck, i) => (
                 <div key={i}>
                   {renderSuggestedDeck(deck, `Ladder Deck ${i + 1}`)}
                 </div>
               ))}
-              {renderSuggestedDeck(data.advice.clan_war_deck, "Clan War Deck")}
+              {renderSuggestedDeck(suggestions.clan_war_deck, 'Clan War Deck')}
             </>
           ) : (
             <div className="glass-card p-6 text-center text-zinc-500 text-sm">
@@ -407,16 +420,16 @@ export default function DecksPage() {
           )}
         </div>
 
-        {/* Recent Decks (Your actual run history) */}
+        {/* Recent Matches */}
         <div className="section-title">
           Last 5 Matches
         </div>
 
         <div className="space-y-4">
-          {(data.battles ?? []).map((battle, i) => {
+          {battles.map((battle, i) => {
             const isCoaching = coachIndex === i
-            const resultColor = battle.result === 'win' ? 'text-green-400' : battle.result === 'loss' ? 'text-red-400' : 'text-zinc-400'
             const resultBg = battle.result === 'win' ? 'bg-green-500/10 border-green-500/20' : battle.result === 'loss' ? 'bg-red-500/10 border-red-500/20' : 'bg-zinc-500/10 border-zinc-500/20'
+            const resultColor = battle.result === 'win' ? 'text-green-400' : battle.result === 'loss' ? 'text-red-400' : 'text-zinc-400'
             const winPct = battle.win_probability
             const winBarColor = winPct >= 60 ? 'bg-green-500' : winPct >= 45 ? 'bg-yellow-500' : 'bg-red-500'
 
@@ -424,7 +437,7 @@ export default function DecksPage() {
               <div key={i} className={`glass-card overflow-hidden transition-all ${isCoaching ? 'ring-1 ring-purple-500/30' : ''}`}>
 
                 {/* Match Header */}
-                <div className={`flex items-center justify-between px-5 py-3 border-b border-white/5 bg-black/20 flex-wrap gap-2`}>
+                <div className="flex items-center justify-between px-5 py-3 border-b border-white/5 bg-black/20 flex-wrap gap-2">
                   <div className="flex items-center gap-3 flex-wrap">
                     <span className="gamemode-badge">{battle.game_mode}</span>
                     <span className={`text-xs font-black px-2.5 py-1 rounded-full border ${resultBg} ${resultColor} uppercase tracking-wide`}>
@@ -463,7 +476,7 @@ export default function DecksPage() {
                       {battle.player_deck.deck_score && renderDeckScore(battle.player_deck.deck_score)}
                     </div>
                     <div className="grid grid-cols-4 gap-1.5">
-                      {assignSlots(battle.player_deck.cards, data.constraints).map(({ card, slot }, ci) => (
+                      {assignSlots(battle.player_deck.cards, constraints).map(({ card, slot }, ci) => (
                         <div key={`p-${ci}`} className={`relative rounded-lg overflow-hidden border border-rarity-${card.rarity} ${slotContainerClass(slot)}`}>
                           <Image src={(card as any).iconUrls?.heroMedium || (card as any).iconUrls?.medium || ''} alt={card.name} width={70} height={70} className="w-full" unoptimized />
                           <div className="absolute bottom-0 left-0 right-0 bg-black/80 text-center py-0.5">
