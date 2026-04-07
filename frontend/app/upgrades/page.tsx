@@ -5,6 +5,8 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { formatLevel, toGameLevel } from '../utils/levels'
 import ReactMarkdown from 'react-markdown'
+import { getApiMode } from '../utils/settings'
+import { useChainPolling, STEP_LABELS } from '../utils/useChainPolling'
 
 interface Priority {
   name: string
@@ -33,30 +35,53 @@ export default function UpgradesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showUnused, setShowUnused] = useState(false)
+  const [upgradesJobId, setUpgradesJobId] = useState<string | null>(null)
+
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? ''
+  const upgradesJob = useChainPolling(upgradesJobId, apiUrl)
 
   useEffect(() => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL
-    fetch(`${apiUrl}/upgrades`)
+    if (upgradesJob?.status === 'complete' && upgradesJob.result) {
+      setData(upgradesJob.result as UpgradeData)
+      setLoading(false)
+      setUpgradesJobId(null)
+    } else if (upgradesJob?.status === 'error') {
+      setLoading(false)
+      setUpgradesJobId(null)
+    }
+  }, [upgradesJob])
+
+  useEffect(() => {
+    const mode = getApiMode()
+    fetch(`${apiUrl}/upgrades?mode=${mode}`)
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       })
       .then(d => {
-        setData(d)
-        setLoading(false)
+        if (d.job_id) {
+          setUpgradesJobId(d.job_id)
+        } else {
+          setData(d)
+          setLoading(false)
+        }
       })
       .catch(e => {
-        setError(e.message)
         setLoading(false)
+        console.error(e)
       })
-  }, [])
+  }, [apiUrl])
 
   if (loading) return (
     <main className="min-h-screen bg-mesh flex items-center justify-center">
       <div className="text-center">
         <div className="w-10 h-10 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin mx-auto mb-4"></div>
-        <p className="text-zinc-400 text-sm">Analyzing your cards...</p>
-        <p className="text-zinc-600 text-xs mt-1">AI is crunching the numbers</p>
+        <p className="text-zinc-400 text-sm">
+          {upgradesJob ? (STEP_LABELS[upgradesJob.current_step] ?? 'Processing...') : 'Analyzing your cards...'}
+        </p>
+        <p className="text-zinc-600 text-xs mt-1">
+          {upgradesJob ? '🔬 Deep mode — this takes ~20s' : 'AI is crunching the numbers'}
+        </p>
       </div>
     </main>
   )
@@ -84,9 +109,7 @@ export default function UpgradesPage() {
         <div className="mb-8">
           <Link href="/" className="back-link mb-3 inline-flex">← Back to Dashboard</Link>
           <h1 className="text-3xl font-bold">
-            <span className="bg-gradient-to-r from-purple-400 to-fuchsia-400 bg-clip-text text-transparent">
-              📈 Upgrade Priorities
-            </span>
+            📈 <span className="bg-gradient-to-r from-purple-400 to-fuchsia-400 bg-clip-text text-transparent">Upgrade Priorities</span>
           </h1>
           <p className="text-zinc-500 text-sm mt-1">AI-powered analysis of which cards to level up first</p>
         </div>
@@ -138,7 +161,7 @@ export default function UpgradesPage() {
                         unoptimized
                       />
                       {/* Evo Shard Indicator */}
-                      {(card as any).evolutionLevel > 0 && card.iconUrls?.evolutionMedium && (
+                      {(card as any).evolutionLevel > 0 && card.iconUrls?.evolutionMedium && !card.iconUrls?.heroMedium && (
                         <div className="absolute top-0 right-0 w-4 h-4 flex items-center justify-center bg-fuchsia-600 border border-fuchsia-300 rounded-sm rotate-45 z-20 transform translate-x-1 -translate-y-1">
                           <span className="-rotate-45 text-[8px] font-black text-white ml-[1px]">❖</span>
                         </div>

@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Agent & Tool Priority
+
+When performing any task, apply this priority order:
+1. **everything-claude-code (ECC) skills/agents** — use these first whenever they add quality (planning, code review, TDD, security, architecture, etc.)
+2. **Other specialized agents/tools** — if no ECC tool fits, check for other agents that improve over base behavior
+3. **Base Claude** — only if no specialized tool applies
+
 ## Commands
 
 ### Frontend (Next.js — `frontend/`)

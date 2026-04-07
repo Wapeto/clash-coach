@@ -1,4 +1,5 @@
 import os
+import re
 import json
 from pathlib import Path
 from google import genai
@@ -10,6 +11,35 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 MODEL = "gemini-2.5-flash"
+
+NO_HYPE_INSTRUCTION = (
+    "Do NOT open with greetings, hype phrases, or filler. "
+    "Forbidden openers include: 'As a pro coach', 'Alright fellow Clasher', 'Great question', "
+    "'Let's dive in', 'As your coach', 'Hey there', 'Absolutely', 'Of course', 'Sure!'. "
+    "Start directly with the substance. Be professional and concise."
+)
+
+_HYPE_PATTERN = re.compile(
+    r"^(alright[\w ,!]*|as (a |your |an )?[\w ]+ coach[\w ,!]*|"
+    r"great (question|choice|pick)[\w ,!]*|let'?s (dive|get) [\w ,!]*|"
+    r"hey (there|clash[\w]*|fellow[\w ]*)[\w ,!]*|"
+    r"sure[!,.][\w ,]*|absolutely[!,.][\w ,]*|of course[!,.][\w ,]*)",
+    re.IGNORECASE,
+)
+
+
+def _strip_hype(text: str) -> str:
+    """Remove hype opener from first line if it matches known patterns."""
+    if not text:
+        return text
+    lines = text.split("\n")
+    first = lines[0].strip()
+    if _HYPE_PATTERN.match(first) and len(first) < 200:
+        lines = lines[1:]
+        # Drop blank line immediately after stripped opener
+        while lines and not lines[0].strip():
+            lines = lines[1:]
+    return "\n".join(lines)
 
 
 class SuggestedDeck(BaseModel):
@@ -34,7 +64,7 @@ def ask_gemini(prompt: str) -> str:
             temperature=0.7,
         )
     )
-    return response.text
+    return _strip_hype(response.text)
 
 
 def ask_gemini_json(prompt: str, schema: type[BaseModel]) -> BaseModel:
@@ -66,60 +96,79 @@ def fmt_level(api_level: int, rarity: str) -> str:
 def format_card_entry(c: dict) -> str:
     lvl = fmt_level(c["level"], c["rarity"])
     is_unlocked = c.get("evolutionLevel", 0) > 0
-    evo = " (EVOLVED)" if is_unlocked and c.get("iconUrls", {}).get("evolutionMedium") else ""
-    hero = " (HERO)" if is_unlocked and c.get("iconUrls", {}).get("heroMedium") else ""
+    has_evo = bool(c.get("iconUrls", {}).get("evolutionMedium"))
+    has_hero = bool(c.get("iconUrls", {}).get("heroMedium"))
+    evo = " (EVOLVED)" if is_unlocked and has_evo and not has_hero else ""
+    hero = " (HERO)" if is_unlocked and has_hero else ""
     elixir = c.get("elixirCost", "?")
     return f"{c['name']}{evo}{hero} (Lvl {lvl}/16, {c['rarity']}, {elixir} elixir)"
 
 
-def prompt_best_decks(player: dict, priorities: list, decks: list) -> BestDecksResponse:
+def prompt_best_decks(player: dict, priorities: list, decks: list, constraints: "DeckConstraints | None" = None) -> BestDecksResponse:
+    from .arena_rules import DeckConstraints
+    if constraints is None:
+        from .arena_rules import get_deck_constraints
+        constraints = get_deck_constraints(player.get("arena", {}))
+
     card_list = [format_card_entry(c) for c in player["cards"]]
-    
-    # Filter strictly for standard ladder/ranked modes if present
+
     ladder_decks = [d for d in decks if d.get("gameMode") in ["Ladder", "Ranked1v1", "Ranked", "Path of Legends"]]
     if not ladder_decks:
         ladder_decks = decks[:5]
 
-    recent_decks = []
-    for d in ladder_decks:
-        recent_decks.append(f"[{d.get('gameMode', 'Unknown')}] " + ", ".join(c["name"] for c in d["cards"]))
+    recent_decks = [
+        f"[{d.get('gameMode', 'Unknown')}] " + ", ".join(c["name"] for c in d["cards"])
+        for d in ladder_decks
+    ]
+
+    constraint_rules = (
+        f"5. DECK SLOT CONSTRAINTS (HARD RULES — violating these makes the deck ILLEGAL):\n"
+        f"   - Maximum {constraints.max_evos} Evolution card(s) per deck.\n"
+        f"   - Maximum {constraints.max_heroes} Hero card(s) per deck.\n"
+        f"   - Maximum {constraints.max_evo_or_hero} total Evo+Hero slot(s) combined per deck.\n"
+        f"   - 0 Evos/Heroes is always valid.\n"
+        f"   - DO NOT exceed these limits under any circumstances."
+    )
 
     prompt = f"""You are an expert Clash Royale coach.
-Your job is to recommend the 3 best LADDER decks and 1 CLAN WAR deck. 
-Use Google Search grounding to find the absolute latest meta decks (e.g. from RoyaleAPI ranking).
+Recommend the 3 best LADDER decks and 1 CLAN WAR deck for this player.
+{NO_HYPE_INSTRUCTION}
 
 Player Data:
 - Trophies: {player.get("trophies", "Unknown")}
-- Cards: {chr(10).join(card_list)}
+- Cards owned: {chr(10).join(card_list)}
 - High Priority Upgrades: {", ".join(p['name'] for p in priorities[:10])}
 - Recently played ladder decks: {chr(10).join(recent_decks)}
 
 CRITICAL RULES:
 1. ONLY return strict JSON matching the schema.
-2. The `cards` array MUST exactly match the card names from the player's collection above (pay attention to spelling, capitalization). DO NOT include (EVOLVED) or level data in the `cards` array, just the base name.
-3. Completely ignore any Clan Battle or 7x Elixir decks when designing Ladder decks.
-4. If they have EVOLVED or HERO cards, design decks that take advantage of them.
+2. The `cards` array MUST exactly match the card names from the player's collection above. DO NOT include (EVOLVED), (HERO), or level data — just the base card name.
+3. Ignore Clan Battle and 7x Elixir decks when designing Ladder decks.
+4. If the player has EVOLVED or HERO cards, prefer decks that use them (within the slot limits below).
+{constraint_rules}
 """
     return ask_gemini_json(prompt, BestDecksResponse)
 
 
 def prompt_upgrade_advice(priorities: list, player: dict) -> str:
     top_picks = priorities[:5]
-    details = []
-    for i, p in enumerate(top_picks):
-        details.append(f"{i+1}. {format_card_entry(p)} - Win Rate: {p['winRate']}%, Score: {p['upgradeScore']}")
+    details = [
+        f"{i+1}. {format_card_entry(p)} - Win Rate: {p['winRate']}%, Score: {p['upgradeScore']}"
+        for i, p in enumerate(top_picks)
+    ]
 
-    prompt = f"""You are an expert Clash Royale coach. Give upgrade advice based on the math.
+    prompt = f"""You are an expert Clash Royale coach. Give upgrade advice based on the data.
+{NO_HYPE_INSTRUCTION}
 Trophy range: {player.get('trophies', 'Unknown')}
 
 Top 5 algorithmically recommended upgrades:
 {chr(10).join(details)}
 
-CRITICAL RULES FOR OUTPUT FORMATTING:
-1. You MUST use rich Markdown formatting.
-2. Use bullet points `- ` and bold text `**`.
-3. Highlight Evos and Heroes strongly.
-4. Give a short, punchy reason for each pick using bolding.
+OUTPUT FORMAT:
+- Use Markdown with bullet points and **bold** text.
+- Highlight Evos and Heroes strongly.
+- Give a short, punchy reason for each pick.
+- Do not add a preamble — start with the first card recommendation.
 """
     return ask_gemini(prompt)
 
@@ -129,6 +178,7 @@ def prompt_deck_coach(deck_cards: list, trophies: int) -> str:
     avg_elixir = round(sum(c.get("elixirCost", 0) for c in deck_cards) / len(deck_cards), 2)
 
     prompt = f"""You are an expert Clash Royale coach. Be specific and practical.
+{NO_HYPE_INSTRUCTION}
 Use Google Search to look up the current meta, recent balance changes, and how this deck archetype performs on ladder right now.
 
 Deck to analyze:
@@ -136,27 +186,16 @@ Deck to analyze:
 Average elixir: {avg_elixir}
 Player trophy range: {trophies}
 
-CRITICAL RULES FOR OUTPUT FORMATTING:
-1. You MUST use rich Markdown formatting (`###` headers, bullet points).
-2. ONLY use bold text for Card Names or Key Terms, otherwise there's too much yellow.
-3. Structure your response EXACTLY with these markdown headers:
+Structure your response EXACTLY with these Markdown headers (no preamble before the first header):
 ### ⚔️ Game Plan & Win Condition
-(Explain core strategy)
-
 ### 🎯 Recommended Openers
-(First cards to play and where)
-
 ### 💧 Elixir Management
-(Cycle strategy)
-
 ### 🛡️ Matchups
 - Beatdown: ...
 - Cycle/Bait: ...
-
 ### ⚠️ Common Mistakes
-(Top 3 mistakes with this deck)
-
 ### 📈 Meta Relevance
-(Is this deck strong right now?)
+
+Use **bold** only for card names or key terms.
 """
     return ask_gemini(prompt)

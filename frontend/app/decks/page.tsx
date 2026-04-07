@@ -5,6 +5,8 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { formatLevel } from '../utils/levels'
 import ReactMarkdown from 'react-markdown'
+import { getApiMode } from '../utils/settings'
+import { useChainPolling, STEP_LABELS } from '../utils/useChainPolling'
 
 interface Card {
   name: string
@@ -49,23 +51,58 @@ export default function DecksPage() {
   const [coachIndex, setCoachIndex] = useState<number | null>(null)
   const [coachAdvice, setCoachAdvice] = useState<string | null>(null)
   const [coachLoading, setCoachLoading] = useState(false)
+  const [coachJobId, setCoachJobId] = useState<string | null>(null)
+  const [decksJobId, setDecksJobId] = useState<string | null>(null)
+
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? ''
+  const decksJob = useChainPolling(decksJobId, apiUrl)
+  const coachJob = useChainPolling(coachJobId, apiUrl)
 
   useEffect(() => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL
-    fetch(`${apiUrl}/decks`)
+    if (decksJob?.status === 'complete' && decksJob.result) {
+      setData(decksJob.result as DecksData)
+      setLoading(false)
+      setDecksJobId(null)
+    } else if (decksJob?.status === 'error') {
+      setError(decksJob.error ?? 'Deep analysis failed')
+      setLoading(false)
+      setDecksJobId(null)
+    }
+  }, [decksJob])
+
+  useEffect(() => {
+    if (coachJob?.status === 'complete' && coachJob.result) {
+      const r = coachJob.result as { advice: string }
+      setCoachAdvice(r.advice)
+      setCoachLoading(false)
+      setCoachJobId(null)
+    } else if (coachJob?.status === 'error') {
+      setCoachAdvice(`Error: ${coachJob.error ?? 'Deep analysis failed'}`)
+      setCoachLoading(false)
+      setCoachJobId(null)
+    }
+  }, [coachJob])
+
+  useEffect(() => {
+    const mode = getApiMode()
+    fetch(`${apiUrl}/decks?mode=${mode}`)
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       })
       .then(d => {
-        setData(d)
-        setLoading(false)
+        if (d.job_id) {
+          setDecksJobId(d.job_id)
+        } else {
+          setData(d)
+          setLoading(false)
+        }
       })
       .catch(e => {
         setError(e.message)
         setLoading(false)
       })
-  }, [])
+  }, [apiUrl])
 
   const handleCoach = (index: number) => {
     if (coachIndex === index && coachAdvice) {
@@ -73,19 +110,24 @@ export default function DecksPage() {
       return
     }
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL
+    const mode = getApiMode()
     setCoachIndex(index)
     setCoachAdvice(null)
     setCoachLoading(true)
+    setCoachJobId(null)
 
-    fetch(`${apiUrl}/coach/${index}`)
+    fetch(`${apiUrl}/coach/${index}?mode=${mode}`)
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       })
       .then(d => {
-        setCoachAdvice(d.advice)
-        setCoachLoading(false)
+        if (d.job_id) {
+          setCoachJobId(d.job_id)
+        } else {
+          setCoachAdvice(d.advice)
+          setCoachLoading(false)
+        }
       })
       .catch(e => {
         setCoachAdvice(`Error: ${e.message}`)
@@ -127,7 +169,7 @@ export default function DecksPage() {
                 {card.elixirCost}
               </div>
               {/* Evo Shard Indicator */}
-              {(card as any).evolutionLevel > 0 && card.iconUrls?.evolutionMedium && (
+              {(card as any).evolutionLevel > 0 && card.iconUrls?.evolutionMedium && !card.iconUrls?.heroMedium && (
                 <div className="absolute top-1 right-1 w-4 h-4 flex items-center justify-center bg-fuchsia-600 border border-fuchsia-300 rounded-sm rotate-45 z-20">
                   <span className="-rotate-45 text-[8px] font-black text-white ml-[1px]">❖</span>
                 </div>
@@ -177,8 +219,12 @@ export default function DecksPage() {
     <main className="min-h-screen bg-mesh flex items-center justify-center">
       <div className="text-center">
         <div className="w-10 h-10 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
-        <p className="text-zinc-400 text-sm">Analyzing your decks...</p>
-        <p className="text-zinc-600 text-xs mt-1">AI is finding the best strategies</p>
+        <p className="text-zinc-400 text-sm">
+          {decksJob ? (STEP_LABELS[decksJob.current_step] ?? 'Processing...') : 'Analyzing your decks...'}
+        </p>
+        <p className="text-zinc-600 text-xs mt-1">
+          {decksJob ? '🔬 Deep mode — this takes ~20s' : 'AI is finding the best strategies'}
+        </p>
       </div>
     </main>
   )
@@ -203,9 +249,7 @@ export default function DecksPage() {
         <div className="mb-8">
           <Link href="/" className="back-link mb-3 inline-flex">← Back to Dashboard</Link>
           <h1 className="text-3xl font-bold">
-            <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
-              🃏 Best Decks
-            </span>
+            🃏 <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">Best Decks</span>
           </h1>
           <p className="text-zinc-500 text-sm mt-1">AI deck suggestions & per-deck coaching</p>
         </div>
@@ -296,7 +340,7 @@ export default function DecksPage() {
                         </div>
                         
                         {/* Evo Shard Indicator */}
-                        {(card as any).evolutionLevel > 0 && (card as any).iconUrls?.evolutionMedium && (
+                        {(card as any).evolutionLevel > 0 && (card as any).iconUrls?.evolutionMedium && !(card as any).iconUrls?.heroMedium && (
                           <div className="absolute top-1 right-1 w-4 h-4 flex items-center justify-center bg-fuchsia-600 border border-fuchsia-300 rounded-sm shadow-[0_0_8px_rgba(192,38,211,0.8)] rotate-45 z-20">
                             <span className="-rotate-45 text-[8px] font-black text-white ml-[1px]">❖</span>
                           </div>
@@ -318,7 +362,9 @@ export default function DecksPage() {
                     {coachLoading ? (
                       <div className="flex items-center gap-3 justify-center py-6">
                         <div className="w-6 h-6 border-2 border-purple-500/30 border-t-purple-500 rounded-full animate-spin"></div>
-                        <p className="text-zinc-400 text-sm">Coach is writing a detailed report for this deck...</p>
+                        <p className="text-zinc-400 text-sm">
+                          {coachJob ? (STEP_LABELS[coachJob.current_step] ?? 'Processing...') : 'Coach is writing a detailed report...'}
+                        </p>
                       </div>
                     ) : (
                       <div>

@@ -4,13 +4,21 @@ import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { formatLevel, toGameLevel } from './utils/levels'
+import CardDetailModal from './components/CardDetailModal'
 
 interface Card {
   name: string
   level: number
   maxLevel: number
   rarity: string
-  iconUrls: { medium: string }
+  elixirCost?: number
+  count?: number
+  evolutionLevel?: number
+  iconUrls: {
+    medium: string
+    evolutionMedium?: string
+    heroMedium?: string
+  }
 }
 
 interface Player {
@@ -27,6 +35,9 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<string>('all')
+  const [sortBy, setSortBy] = useState<'default' | 'level-asc' | 'level-desc' | 'elixir-asc' | 'elixir-desc'>('default')
+  const [elixirMax, setElixirMax] = useState<number>(10)
+  const [selectedCard, setSelectedCard] = useState<Card | null>(null)
 
   useEffect(() => {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL
@@ -67,13 +78,27 @@ export default function Home() {
 
   const winRate = ((player.wins / (player.wins + player.losses)) * 100).toFixed(1)
   const rarities = ['all', 'evo', 'hero', 'champion', 'legendary', 'epic', 'rare', 'common']
-  const filteredCards = filter === 'all'
+  const baseFiltered = filter === 'all'
     ? player.cards
     : filter === 'evo'
-      ? player.cards.filter(c => (c as any).evolutionLevel > 0 && c.iconUrls && (c as any).iconUrls.evolutionMedium)
-    : filter === 'hero'
-      ? player.cards.filter(c => (c as any).evolutionLevel > 0 && c.iconUrls && (c as any).iconUrls.heroMedium)
-      : player.cards.filter(c => c.rarity === filter)
+      ? player.cards.filter(c => c.evolutionLevel && c.evolutionLevel > 0 && c.iconUrls?.evolutionMedium && !c.iconUrls?.heroMedium)
+      : filter === 'hero'
+        ? player.cards.filter(c => c.evolutionLevel && c.evolutionLevel > 0 && c.iconUrls?.heroMedium)
+        : player.cards.filter(c => c.rarity === filter)
+
+  const elixirFiltered = elixirMax < 10
+    ? baseFiltered.filter(c => (c.elixirCost ?? 0) <= elixirMax)
+    : baseFiltered
+
+  const filteredCards = [...elixirFiltered].sort((a, b) => {
+    const aLvl = toGameLevel(a.level, a.rarity)
+    const bLvl = toGameLevel(b.level, b.rarity)
+    if (sortBy === 'level-asc') return aLvl - bLvl
+    if (sortBy === 'level-desc') return bLvl - aLvl
+    if (sortBy === 'elixir-asc') return (a.elixirCost ?? 0) - (b.elixirCost ?? 0)
+    if (sortBy === 'elixir-desc') return (b.elixirCost ?? 0) - (a.elixirCost ?? 0)
+    return 0
+  })
 
   return (
     <main className="min-h-screen bg-mesh">
@@ -118,12 +143,15 @@ export default function Home() {
         </div>
 
         {/* Navigation */}
-        <div className="flex gap-3 mb-10">
+        <div className="flex gap-3 mb-10 flex-wrap items-center">
           <Link href="/upgrades" className="nav-btn nav-btn-purple">
             📈 Upgrade Priorities
           </Link>
           <Link href="/decks" className="nav-btn nav-btn-blue">
             🃏 Best Decks
+          </Link>
+          <Link href="/settings" className="ml-auto text-zinc-500 hover:text-zinc-300 transition-colors text-sm flex items-center gap-1.5">
+            ⚙️ Settings
           </Link>
         </div>
 
@@ -133,7 +161,7 @@ export default function Home() {
         </div>
 
         {/* Rarity Filter */}
-        <div className="flex gap-2 mb-5 flex-wrap">
+        <div className="flex gap-2 mb-3 flex-wrap">
           {rarities.map(r => (
             <button
               key={r}
@@ -148,6 +176,41 @@ export default function Home() {
           ))}
         </div>
 
+        {/* Sort & Elixir Filter */}
+        <div className="flex gap-3 mb-5 flex-wrap items-center">
+          <select
+            value={sortBy}
+            onChange={e => setSortBy(e.target.value as typeof sortBy)}
+            className="text-xs bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-zinc-300 cursor-pointer"
+          >
+            <option value="default">Sort: Default</option>
+            <option value="level-desc">Level: High → Low</option>
+            <option value="level-asc">Level: Low → High</option>
+            <option value="elixir-asc">Elixir: Low → High</option>
+            <option value="elixir-desc">Elixir: High → Low</option>
+          </select>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-zinc-500">Max elixir:</span>
+            <div className="flex gap-1">
+              {[3, 4, 5, 6, 7, 8, 10].map(n => (
+                <button
+                  key={n}
+                  onClick={() => setElixirMax(n === elixirMax ? 10 : n)}
+                  className={`text-xs w-7 h-7 rounded-lg border transition-all cursor-pointer font-bold
+                    ${elixirMax === n
+                      ? 'bg-purple-500/30 border-purple-500 text-purple-300'
+                      : 'border-white/10 text-zinc-500 hover:border-white/20 hover:text-zinc-300'}`}
+                >
+                  {n === 10 ? 'All' : n}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <span className="text-xs text-zinc-600 ml-auto">{filteredCards.length} cards</span>
+        </div>
+
         <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 gap-2">
           {(filteredCards ?? []).map(card => {
             const gameLevel = toGameLevel(card.level, card.rarity)
@@ -155,8 +218,9 @@ export default function Home() {
             return (
               <div
                 key={card.name}
-                className={`group relative rounded-xl overflow-hidden border-2 bg-[#111318] transition-all hover:scale-105 hover:z-10 border-rarity-${card.rarity}`}
+                className={`group relative rounded-xl overflow-hidden border-2 bg-[#111318] transition-all hover:scale-105 hover:z-10 border-rarity-${card.rarity} cursor-pointer`}
                 title={`${card.name} — ${formatLevel(card.level, card.rarity)}`}
+                onClick={() => setSelectedCard(card)}
               >
                 <Image
                   src={card.iconUrls.medium}
@@ -183,7 +247,7 @@ export default function Home() {
                 </div>
 
                 {/* Evo Shard Indicator */}
-                {(card as any).evolutionLevel > 0 && (card as any).iconUrls?.evolutionMedium && (
+                {(card as any).evolutionLevel > 0 && (card as any).iconUrls?.evolutionMedium && !(card as any).iconUrls?.heroMedium && (
                   <div className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center bg-fuchsia-600 border border-fuchsia-300 rounded-sm shadow-[0_0_8px_rgba(192,38,211,0.8)] rotate-45 z-20">
                     <span className="-rotate-45 text-[10px] font-black text-white ml-[1px]">❖</span>
                   </div>
@@ -200,6 +264,10 @@ export default function Home() {
         </div>
 
       </div>
+
+      {selectedCard && (
+        <CardDetailModal card={selectedCard} onClose={() => setSelectedCard(null)} />
+      )}
     </main>
   )
 }
