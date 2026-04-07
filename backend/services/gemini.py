@@ -29,7 +29,7 @@ def ask_gemini(prompt: str) -> str:
         model=MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(
-            tools=[{"google_search": {}}],
+            tools=[types.Tool(google_search=types.GoogleSearch())],
             temperature=0.7,
         )
     )
@@ -37,11 +37,11 @@ def ask_gemini(prompt: str) -> str:
 
 
 def ask_gemini_json(prompt: str, schema: type[BaseModel]) -> BaseModel:
+    # Google Search grounding is incompatible with structured JSON output (response_schema)
     response = client.models.generate_content(
         model=MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(
-            tools=[{"google_search": {}}],
             temperature=0.7,
             response_mime_type="application/json",
             response_schema=schema,
@@ -125,7 +125,7 @@ CRITICAL RULES FOR OUTPUT FORMATTING:
 
 def prompt_deck_coach(deck_cards: list, trophies: int) -> str:
     card_lines = ["- " + format_card_entry(c) for c in deck_cards]
-    avg_elixir = round(sum(c["elixirCost"] for c in deck_cards) / len(deck_cards), 2)
+    avg_elixir = round(sum(c.get("elixirCost", 0) for c in deck_cards) / len(deck_cards), 2)
 
     prompt = f"""You are an expert Clash Royale coach. Be specific and practical.
 Use Google Search to look up the current meta, recent balance changes, and how this deck archetype performs on ladder right now.
