@@ -23,7 +23,7 @@ AI_QUOTA_MSG = "AI advice unavailable (Gemini quota exceeded). Check your API ke
 
 
 def _is_quota_error(e: Exception) -> bool:
-    return isinstance(e, ClientError) and e.status_code == 429
+    return isinstance(e, ClientError) and "429" in str(e)
 
 
 @app.get("/player")
