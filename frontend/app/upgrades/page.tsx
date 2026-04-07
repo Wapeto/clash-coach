@@ -16,6 +16,11 @@ interface Priority {
   winRate: number
   upgradeScore: number
   iconUrl: string | null
+  iconUrls?: {
+    medium?: string
+    evolutionMedium?: string
+    heroMedium?: string
+  }
 }
 
 interface UpgradeData {
@@ -91,7 +96,7 @@ export default function UpgradesPage() {
           <div className="flex items-center gap-2 mb-5">
             <span className="text-lg">🤖</span>
             <h2 className="text-base font-semibold text-purple-300 tracking-wide uppercase text-[13px]">AI Recommendations</h2>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 font-medium">
+            <span className="text-[10px] px-2.5 py-1 rounded-full bg-[#166534] text-[#4ade80] border border-[#22c55e] font-bold tracking-wide shadow-sm">
               Live Meta
             </span>
           </div>
@@ -105,7 +110,8 @@ export default function UpgradesPage() {
           Cards You Use — {usedCards.length} cards
         </div>
 
-        <div className="space-y-2 mb-10">
+        {/* Grid layout for used cards */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-10">
           {usedCards.map((card, i) => {
             const gameLevel = toGameLevel(card.level, card.rarity)
             const pct = (gameLevel / 16) * 100
@@ -114,69 +120,72 @@ export default function UpgradesPage() {
             return (
               <div
                 key={card.name}
-                className={`glass-card p-4 flex items-center gap-4 transition-all ${isTop5 ? 'border-l-2 border-l-purple-500/60' : ''}`}
+                className={`glass-card flex flex-col p-4 transition-all hover:scale-[1.02] ${isTop5 ? 'ring-2 ring-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.2)]' : ''}`}
               >
-                {/* Rank */}
-                <div className="w-8 text-center">
-                  <span className={`text-sm font-bold ${isTop5 ? 'text-purple-400' : 'text-zinc-600'}`}>
+                <div className="flex justify-between items-start mb-3">
+                  <div className={`text-sm font-black ${isTop5 ? 'text-purple-400' : 'text-zinc-500'}`}>
                     #{i + 1}
-                  </span>
-                </div>
-
-                {/* Icon */}
-                {card.iconUrl && (
-                  <div className={`relative w-12 h-12 rounded-lg overflow-hidden border border-rarity-${card.rarity} bg-rarity-${card.rarity} flex-shrink-0`}>
-                    <Image
-                      src={card.iconUrl}
-                      alt={card.name}
-                      width={48}
-                      height={48}
-                      className="w-full h-full object-cover"
-                      unoptimized
-                    />
-                    {(card as any).evolutionLevel > 0 && (
-                      <div className="absolute top-0 right-0 w-3.5 h-3.5 flex items-center justify-center bg-fuchsia-600 border border-fuchsia-300 rounded-sm rotate-45 z-20 transform translate-x-1 -translate-y-1">
-                        <span className="-rotate-45 text-[7px] font-black text-white ml-[1px]">❖</span>
-                      </div>
-                    )}
                   </div>
-                )}
-
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-white text-sm truncate">{card.name}</p>
-                  <p className={`text-xs rarity-${card.rarity} capitalize`}>{card.rarity}</p>
+                  
+                  {card.iconUrl && (
+                    <div className={`relative w-14 h-14 rounded-lg overflow-hidden border-2 border-rarity-${card.rarity} bg-rarity-${card.rarity}`}>
+                      <Image
+                        src={card.iconUrl}
+                        alt={card.name}
+                        width={56}
+                        height={56}
+                        className="w-full h-full object-cover"
+                        unoptimized
+                      />
+                      {/* Evo Shard Indicator */}
+                      {card.iconUrls?.evolutionMedium && (
+                        <div className="absolute top-0 right-0 w-4 h-4 flex items-center justify-center bg-fuchsia-600 border border-fuchsia-300 rounded-sm rotate-45 z-20 transform translate-x-1 -translate-y-1">
+                          <span className="-rotate-45 text-[8px] font-black text-white ml-[1px]">❖</span>
+                        </div>
+                      )}
+                      {/* Hero Indicator */}
+                      {card.iconUrls?.heroMedium && (
+                        <div className="absolute top-0 left-0 w-4 h-4 flex items-center justify-center bg-yellow-500 border border-yellow-200 rounded-sm z-20 transform -translate-x-1 -translate-y-1">
+                          <span className="text-[10px] font-black text-white ml-[1px] -mt-[1px]">★</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
-                {/* Level */}
-                <div className="w-20">
-                  <p className="text-sm font-bold text-white">Lvl {formatLevel(card.level, card.rarity)}</p>
-                  <div className="level-bar-bg">
-                    <div
-                      className="level-bar-fill"
-                      style={{
-                        width: `${pct}%`,
-                        background: pct >= 100 ? '#22c55e' : pct >= 80 ? '#fbbf24' : '#a855f7',
-                      }}
-                    />
+                <div className="mb-3">
+                  <p className="font-bold text-white text-base truncate">{card.name}</p>
+                  <div className="flex justify-between items-center mt-1">
+                    <p className={`text-xs font-semibold rarity-${card.rarity} capitalize`}>{card.rarity}</p>
+                    <p className="text-xs font-bold text-zinc-300">Lvl {formatLevel(card.level, card.rarity)}</p>
                   </div>
                 </div>
 
-                {/* Stats */}
-                <div className="hidden sm:flex gap-4 text-xs text-right">
-                  <div>
-                    <p className="text-zinc-400">{card.appearances}x</p>
-                    <p className="text-zinc-600">used</p>
+                <div className="level-bar-bg mb-4 h-1.5">
+                  <div
+                    className="level-bar-fill"
+                    style={{
+                      width: `${pct}%`,
+                      background: pct >= 100 ? '#22c55e' : pct >= 80 ? '#fbbf24' : '#a855f7',
+                    }}
+                  />
+                </div>
+
+                {/* Stats grid */}
+                <div className="grid grid-cols-3 gap-2 mt-auto pt-3 border-t border-white/5">
+                  <div className="text-center">
+                    <p className="text-xs text-zinc-500 mb-0.5">Used</p>
+                    <p className="text-sm font-bold text-zinc-300">{card.appearances}</p>
                   </div>
-                  <div>
-                    <p className={card.winRate > 50 ? 'text-green-400' : card.winRate > 0 ? 'text-yellow-400' : 'text-zinc-500'}>
+                  <div className="text-center border-l border-r border-white/5">
+                    <p className="text-xs text-zinc-500 mb-0.5">Win %</p>
+                    <p className={`text-sm font-bold ${card.winRate > 50 ? 'text-green-400' : card.winRate > 0 ? 'text-yellow-400' : 'text-zinc-500'}`}>
                       {card.winRate}%
                     </p>
-                    <p className="text-zinc-600">win rate</p>
                   </div>
-                  <div>
-                    <p className="text-purple-400 font-mono font-bold">{card.upgradeScore}</p>
-                    <p className="text-zinc-600">score</p>
+                  <div className="text-center">
+                    <p className="text-xs text-zinc-500 mb-0.5">Score</p>
+                    <p className="text-sm font-bold text-purple-400">{card.upgradeScore}</p>
                   </div>
                 </div>
               </div>
@@ -184,7 +193,7 @@ export default function UpgradesPage() {
           })}
         </div>
 
-        {/* Unused cards (collapsible) */}
+        {/* Unused cards */}
         {unusedCards.length > 0 && (
           <>
             <button
@@ -202,17 +211,19 @@ export default function UpgradesPage() {
                     className="glass-card p-2 text-center opacity-40 hover:opacity-70 transition-opacity"
                   >
                     {card.iconUrl && (
-                      <Image
-                        src={card.iconUrl}
-                        alt={card.name}
-                        width={36}
-                        height={36}
-                        className="mx-auto rounded mb-1"
-                        unoptimized
-                      />
+                      <div className="relative w-9 h-9 mx-auto mb-1">
+                        <Image
+                          src={card.iconUrl}
+                          alt={card.name}
+                          width={36}
+                          height={36}
+                          className="rounded"
+                          unoptimized
+                        />
+                      </div>
                     )}
-                    <p className="text-[10px] text-zinc-500 truncate">{card.name}</p>
-                    <p className="text-[10px] text-zinc-700">{formatLevel(card.level, card.rarity)}</p>
+                    <p className="text-[10px] text-zinc-400 truncate">{card.name}</p>
+                    <p className="text-[10px] font-bold text-zinc-600">{formatLevel(card.level, card.rarity)}</p>
                   </div>
                 ))}
               </div>

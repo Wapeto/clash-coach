@@ -199,7 +199,12 @@ body {
   color: #a855f7;
 }
 .ai-prose strong {
+  color: #e9d5ff;
+  font-weight: 600;
+}
+.ai-prose em {
   color: #fbbf24;
+  font-style: normal;
   font-weight: 600;
 }
 .ai-prose code {

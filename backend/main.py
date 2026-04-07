@@ -43,7 +43,7 @@ def decks():
         priorities = compute_upgrade_priorities(p, battles)
         used_decks = get_used_decks(battles)
         advice = prompt_best_decks(p, priorities, used_decks)
-        return {"decks": used_decks, "advice": advice}
+        return {"decks": used_decks, "advice": advice.model_dump(), "collection": p.get("cards", [])}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
