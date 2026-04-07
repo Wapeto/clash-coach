@@ -1,9 +1,10 @@
 import os
 import urllib.parse
+from pathlib import Path
 import httpx
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 CR_BASE_URL = "https://api.clashroyale.com/v1"
 CR_API_KEY = os.getenv("CR_API_KEY")

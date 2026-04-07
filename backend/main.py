@@ -1,9 +1,13 @@
+import logging
+import traceback
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from .services.cr_api import get_player, get_battle_log
 from .services.analyzer import compute_upgrade_priorities, get_used_decks
 from .services.gemini import prompt_best_decks, prompt_upgrade_advice, prompt_deck_coach
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Clash Coach API")
 
@@ -20,6 +24,7 @@ def player():
     try:
         return get_player()
     except Exception as e:
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -32,6 +37,7 @@ def upgrades():
         advice = prompt_upgrade_advice(priorities, p)
         return {"priorities": priorities, "advice": advice}
     except Exception as e:
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -45,6 +51,7 @@ def decks():
         advice = prompt_best_decks(p, priorities, used_decks)
         return {"decks": used_decks, "advice": advice.model_dump(), "collection": p.get("cards", [])}
     except Exception as e:
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -62,4 +69,5 @@ def coach(deck_index: int):
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
