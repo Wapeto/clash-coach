@@ -70,9 +70,9 @@ export default function Home() {
   const filteredCards = filter === 'all'
     ? player.cards
     : filter === 'evo'
-      ? player.cards.filter(c => c.iconUrls && (c as any).iconUrls.evolutionMedium)
+      ? player.cards.filter(c => (c as any).evolutionLevel > 0 && c.iconUrls && (c as any).iconUrls.evolutionMedium)
     : filter === 'hero'
-      ? player.cards.filter(c => c.iconUrls && (c as any).iconUrls.heroMedium)
+      ? player.cards.filter(c => (c as any).evolutionLevel > 0 && c.iconUrls && (c as any).iconUrls.heroMedium)
       : player.cards.filter(c => c.rarity === filter)
 
   return (
@@ -183,13 +183,13 @@ export default function Home() {
                 </div>
 
                 {/* Evo Shard Indicator */}
-                {(card as any).iconUrls?.evolutionMedium && (
+                {(card as any).evolutionLevel > 0 && (card as any).iconUrls?.evolutionMedium && (
                   <div className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center bg-fuchsia-600 border border-fuchsia-300 rounded-sm shadow-[0_0_8px_rgba(192,38,211,0.8)] rotate-45 z-20">
                     <span className="-rotate-45 text-[10px] font-black text-white ml-[1px]">❖</span>
                   </div>
                 )}
                 {/* Hero Indicator */}
-                {(card as any).iconUrls?.heroMedium && (
+                {(card as any).evolutionLevel > 0 && (card as any).iconUrls?.heroMedium && (
                   <div className="absolute top-1 left-1 w-5 h-5 flex items-center justify-center bg-yellow-500 border border-yellow-200 rounded-sm shadow-[0_0_8px_rgba(234,179,8,0.8)] z-20">
                     <span className="text-[12px] font-black text-white ml-[1px] -mt-[1px]">★</span>
                   </div>

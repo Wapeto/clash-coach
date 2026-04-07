@@ -64,9 +64,11 @@ def fmt_level(api_level: int, rarity: str) -> str:
 
 def format_card_entry(c: dict) -> str:
     lvl = fmt_level(c["level"], c["rarity"])
-    evo = " (EVOLVED)" if c.get("iconUrls", {}).get("evolutionMedium") else ""
-    hero = " (HERO)" if c.get("iconUrls", {}).get("heroMedium") else ""
-    return f"{c['name']}{evo}{hero} (Lvl {lvl}/16, {c['rarity']}, {c['elixirCost']} elixir)"
+    is_unlocked = c.get("evolutionLevel", 0) > 0
+    evo = " (EVOLVED)" if is_unlocked and c.get("iconUrls", {}).get("evolutionMedium") else ""
+    hero = " (HERO)" if is_unlocked and c.get("iconUrls", {}).get("heroMedium") else ""
+    elixir = c.get("elixirCost", "?")
+    return f"{c['name']}{evo}{hero} (Lvl {lvl}/16, {c['rarity']}, {elixir} elixir)"
 
 
 def prompt_best_decks(player: dict, priorities: list, decks: list) -> BestDecksResponse:

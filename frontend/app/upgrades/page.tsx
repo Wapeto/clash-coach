@@ -138,13 +138,13 @@ export default function UpgradesPage() {
                         unoptimized
                       />
                       {/* Evo Shard Indicator */}
-                      {card.iconUrls?.evolutionMedium && (
+                      {(card as any).evolutionLevel > 0 && card.iconUrls?.evolutionMedium && (
                         <div className="absolute top-0 right-0 w-4 h-4 flex items-center justify-center bg-fuchsia-600 border border-fuchsia-300 rounded-sm rotate-45 z-20 transform translate-x-1 -translate-y-1">
                           <span className="-rotate-45 text-[8px] font-black text-white ml-[1px]">❖</span>
                         </div>
                       )}
                       {/* Hero Indicator */}
-                      {card.iconUrls?.heroMedium && (
+                      {(card as any).evolutionLevel > 0 && card.iconUrls?.heroMedium && (
                         <div className="absolute top-0 left-0 w-4 h-4 flex items-center justify-center bg-yellow-500 border border-yellow-200 rounded-sm z-20 transform -translate-x-1 -translate-y-1">
                           <span className="text-[10px] font-black text-white ml-[1px] -mt-[1px]">★</span>
                         </div>

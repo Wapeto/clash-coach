@@ -127,13 +127,13 @@ export default function DecksPage() {
                 {card.elixirCost}
               </div>
               {/* Evo Shard Indicator */}
-              {card.iconUrls?.evolutionMedium && (
+              {(card as any).evolutionLevel > 0 && card.iconUrls?.evolutionMedium && (
                 <div className="absolute top-1 right-1 w-4 h-4 flex items-center justify-center bg-fuchsia-600 border border-fuchsia-300 rounded-sm rotate-45 z-20">
                   <span className="-rotate-45 text-[8px] font-black text-white ml-[1px]">❖</span>
                 </div>
               )}
               {/* Hero Indicator */}
-              {card.iconUrls?.heroMedium && (
+              {(card as any).evolutionLevel > 0 && card.iconUrls?.heroMedium && (
                 <div className="absolute top-1 right-1 w-4 h-4 flex items-center justify-center bg-yellow-500 border border-yellow-200 rounded-sm z-20">
                   <span className="text-[10px] font-black text-white ml-[1px] -mt-[1px]">★</span>
                 </div>
@@ -289,13 +289,13 @@ export default function DecksPage() {
                         </div>
                         
                         {/* Evo Shard Indicator */}
-                        {(card as any).iconUrls?.evolutionMedium && (
+                        {(card as any).evolutionLevel > 0 && (card as any).iconUrls?.evolutionMedium && (
                           <div className="absolute top-1 right-1 w-4 h-4 flex items-center justify-center bg-fuchsia-600 border border-fuchsia-300 rounded-sm shadow-[0_0_8px_rgba(192,38,211,0.8)] rotate-45 z-20">
                             <span className="-rotate-45 text-[8px] font-black text-white ml-[1px]">❖</span>
                           </div>
                         )}
                         {/* Hero Indicator */}
-                        {(card as any).iconUrls?.heroMedium && (
+                        {(card as any).evolutionLevel > 0 && (card as any).iconUrls?.heroMedium && (
                           <div className="absolute top-1 right-1 w-4 h-4 flex items-center justify-center bg-yellow-500 border border-yellow-200 rounded-sm z-20">
                             <span className="text-[10px] font-black text-white ml-[1px] -mt-[1px]">★</span>
                           </div>
