@@ -39,7 +39,7 @@ interface DecksData {
   advice: {
     ladder_decks: SuggestedDeck[]
     clan_war_deck: SuggestedDeck
-  }
+  } | null
 }
 
 export default function DecksPage() {
@@ -220,13 +220,20 @@ export default function DecksPage() {
             </span>
           </div>
 
-          {data.advice.ladder_decks.map((deck, i) => (
-            <div key={i}>
-              {renderSuggestedDeck(deck, `Ladder Deck ${i + 1}`)}
+          {data.advice ? (
+            <>
+              {data.advice.ladder_decks.map((deck, i) => (
+                <div key={i}>
+                  {renderSuggestedDeck(deck, `Ladder Deck ${i + 1}`)}
+                </div>
+              ))}
+              {renderSuggestedDeck(data.advice.clan_war_deck, "Clan War Deck")}
+            </>
+          ) : (
+            <div className="glass-card p-6 text-center text-zinc-500 text-sm">
+              AI suggestions unavailable — Gemini quota exceeded. Check your API key at aistudio.google.com/apikey
             </div>
-          ))}
-
-          {renderSuggestedDeck(data.advice.clan_war_deck, "Clan War Deck")}
+          )}
         </div>
 
         {/* Recent Decks (Your actual run history) */}

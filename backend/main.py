@@ -2,6 +2,7 @@ import logging
 import traceback
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from google.genai.errors import ClientError
 from .services.cr_api import get_player, get_battle_log
 from .services.analyzer import compute_upgrade_priorities, get_used_decks
 from .services.gemini import prompt_best_decks, prompt_upgrade_advice, prompt_deck_coach
@@ -17,6 +18,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+AI_QUOTA_MSG = "AI advice unavailable (Gemini quota exceeded). Check your API key at https://aistudio.google.com/apikey"
+
+
+def _is_quota_error(e: Exception) -> bool:
+    return isinstance(e, ClientError) and e.status_code == 429
 
 
 @app.get("/player")
@@ -34,7 +41,11 @@ def upgrades():
         p = get_player()
         battles = get_battle_log()
         priorities = compute_upgrade_priorities(p, battles)
-        advice = prompt_upgrade_advice(priorities, p)
+        try:
+            advice = prompt_upgrade_advice(priorities, p)
+        except Exception as e:
+            logger.error(traceback.format_exc())
+            advice = AI_QUOTA_MSG if _is_quota_error(e) else f"AI unavailable: {e}"
         return {"priorities": priorities, "advice": advice}
     except Exception as e:
         logger.error(traceback.format_exc())
@@ -48,8 +59,13 @@ def decks():
         battles = get_battle_log()
         priorities = compute_upgrade_priorities(p, battles)
         used_decks = get_used_decks(battles)
-        advice = prompt_best_decks(p, priorities, used_decks)
-        return {"decks": used_decks, "advice": advice.model_dump(), "collection": p.get("cards", [])}
+        try:
+            ai_advice = prompt_best_decks(p, priorities, used_decks)
+            advice = ai_advice.model_dump()
+        except Exception as e:
+            logger.error(traceback.format_exc())
+            advice = None
+        return {"decks": used_decks, "advice": advice, "collection": p.get("cards", [])}
     except Exception as e:
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
@@ -64,7 +80,11 @@ def coach(deck_index: int):
         if deck_index >= len(used_decks):
             raise HTTPException(status_code=404, detail="Deck index out of range")
         deck = used_decks[deck_index]
-        advice = prompt_deck_coach(deck["cards"], p["trophies"])
+        try:
+            advice = prompt_deck_coach(deck["cards"], p["trophies"])
+        except Exception as e:
+            logger.error(traceback.format_exc())
+            advice = AI_QUOTA_MSG if _is_quota_error(e) else f"AI unavailable: {e}"
         return {"deck": deck, "advice": advice}
     except HTTPException:
         raise
