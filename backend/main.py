@@ -1,7 +1,7 @@
 import logging
 import traceback
 import threading
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from google.genai.errors import ClientError
 from .services.cr_api import get_player, get_battle_log
@@ -37,19 +37,19 @@ def _ai_error_msg(e: Exception) -> str:
 
 
 @app.get("/player")
-def player():
+def player(tag: str = None):
     try:
-        return get_player()
+        return get_player(tag)
     except Exception as e:
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/upgrades")
-def upgrades(mode: str = "fast"):
+def upgrades(mode: str = "fast", tag: str = None):
     try:
-        p = get_player()
-        battles = get_battle_log()
+        p = get_player(tag)
+        battles = get_battle_log(tag)
         priorities = compute_upgrade_priorities(p, battles)
 
         if mode == "deep":
@@ -73,16 +73,16 @@ def upgrades(mode: str = "fast"):
 
 
 @app.get("/decks")
-def decks(mode: str = "fast"):
+def decks(mode: str = "fast", tag: str = None):
     try:
-        p = get_player()
-        battles = get_battle_log()
+        p = get_player(tag)
+        battles = get_battle_log(tag)
         priorities = compute_upgrade_priorities(p, battles)
         used_decks = get_used_decks(battles)
         constraints = get_deck_constraints(p.get("arena", {}))
 
         if mode == "deep":
-            last_battles_deep = get_last_battles(battles, p.get("cards", []), n=5)
+            last_battles_deep = get_last_battles(battles, p.get("cards", []), n=5, constraints=constraints)
             job_id = create_job()
             threading.Thread(
                 target=run_deck_chain,
@@ -91,33 +91,38 @@ def decks(mode: str = "fast"):
             ).start()
             return {"job_id": job_id, "status": "running"}
 
-        # Enrich recent decks with player collection data and deck score
         card_lookup = {c["name"].lower(): c for c in p.get("cards", [])}
         for deck in used_decks:
             enriched = [card_lookup.get(c["name"].lower(), c) for c in deck["cards"]]
-            deck["deck_score"] = compute_deck_score(enriched)
+            deck["deck_score"] = compute_deck_score(enriched, constraints)
 
+        # AI deck suggestions — isolate from score enrichment so a score bug can't wipe advice
+        advice = None
         try:
             ai_advice = prompt_best_decks(p, priorities, used_decks, constraints)
             advice = ai_advice.model_dump()
-            # Attach deck score to each AI-suggested deck using player's actual card levels
-            for suggested in advice.get("ladder_decks", []):
-                cards = [card_lookup.get(n.lower(), {"level": 1, "rarity": "common"}) for n in suggested["cards"]]
-                suggested["deck_score"] = compute_deck_score(cards)
-            cw = advice.get("clan_war_deck")
-            if cw:
-                cards = [card_lookup.get(n.lower(), {"level": 1, "rarity": "common"}) for n in cw["cards"]]
-                cw["deck_score"] = compute_deck_score(cards)
         except Exception as e:
             logger.error(traceback.format_exc())
-            advice = None
 
-        last_battles = get_last_battles(battles, p.get("cards", []), n=5)
+        if advice:
+            try:
+                for suggested in advice.get("ladder_decks", []):
+                    cards = [card_lookup.get(n.lower(), {"level": 1, "rarity": "common"}) for n in suggested["cards"]]
+                    suggested["deck_score"] = compute_deck_score(cards, constraints)
+                cw = advice.get("clan_war_deck")
+                if cw:
+                    cards = [card_lookup.get(n.lower(), {"level": 1, "rarity": "common"}) for n in cw["cards"]]
+                    cw["deck_score"] = compute_deck_score(cards, constraints)
+            except Exception:
+                logger.error(traceback.format_exc())
+
+        last_battles = get_last_battles(battles, p.get("cards", []), n=5, constraints=constraints)
         return {
             "battles": last_battles,
-            "decks": used_decks,  # kept for AI context / coach endpoint compatibility
+            "decks": used_decks,
             "advice": advice,
             "collection": p.get("cards", []),
+            "constraints": constraints.model_dump(),
         }
     except Exception as e:
         logger.error(traceback.format_exc())
@@ -125,15 +130,14 @@ def decks(mode: str = "fast"):
 
 
 @app.get("/coach/{deck_index}")
-def coach(deck_index: int, mode: str = "fast"):
+def coach(deck_index: int, mode: str = "fast", tag: str = None):
     try:
-        p = get_player()
-        battles = get_battle_log()
+        p = get_player(tag)
+        battles = get_battle_log(tag)
         used_decks = get_used_decks(battles)
         if deck_index >= len(used_decks):
             raise HTTPException(status_code=404, detail="Deck index out of range")
         deck = used_decks[deck_index]
-        # Enrich battle-log cards with collection data (adds evolutionLevel, iconUrls, etc.)
         card_lookup = {c["name"]: c for c in p.get("cards", [])}
         enriched_cards = [card_lookup.get(c["name"], c) for c in deck["cards"]]
 
@@ -160,11 +164,12 @@ def coach(deck_index: int, mode: str = "fast"):
 
 
 @app.get("/coach/battle/{battle_index}")
-def coach_battle(battle_index: int, mode: str = "fast"):
+def coach_battle(battle_index: int, mode: str = "fast", tag: str = None):
     try:
-        p = get_player()
-        battles = get_battle_log()
-        last = get_last_battles(battles, p.get("cards", []), n=5)
+        p = get_player(tag)
+        battles = get_battle_log(tag)
+        constraints = get_deck_constraints(p.get("arena", {}))
+        last = get_last_battles(battles, p.get("cards", []), n=5, constraints=constraints)
         if battle_index >= len(last):
             raise HTTPException(status_code=404, detail="Battle index out of range")
         enriched_cards = last[battle_index]["player_deck"]["cards"]

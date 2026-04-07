@@ -5,6 +5,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { formatLevel, toGameLevel } from './utils/levels'
 import CardDetailModal from './components/CardDetailModal'
+import { getTagParam } from './utils/settings'
 
 interface Card {
   name: string
@@ -41,7 +42,7 @@ export default function Home() {
 
   useEffect(() => {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL
-    fetch(`${apiUrl}/player`)
+    fetch(`${apiUrl}/player?${getTagParam().slice(1)}`)
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
@@ -245,6 +246,13 @@ export default function Home() {
                     />
                   </div>
                 </div>
+
+                {/* Elixir cost badge */}
+                {card.elixirCost != null && (
+                  <div className="absolute top-0 left-0 bg-purple-600/90 text-[8px] font-bold text-white px-1 py-0.5 rounded-br-md z-10 leading-tight">
+                    {card.elixirCost}
+                  </div>
+                )}
 
                 {/* Evo Shard Indicator */}
                 {(card as any).evolutionLevel > 0 && (card as any).iconUrls?.evolutionMedium && !(card as any).iconUrls?.heroMedium && (

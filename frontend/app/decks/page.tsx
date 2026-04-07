@@ -5,7 +5,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { formatLevel } from '../utils/levels'
 import ReactMarkdown from 'react-markdown'
-import { getApiMode } from '../utils/settings'
+import { getApiMode, getTagParam } from '../utils/settings'
 import { useChainPolling, STEP_LABELS } from '../utils/useChainPolling'
 
 interface Card {
@@ -59,14 +59,24 @@ interface SuggestedDeck {
   deck_score?: DeckScore
 }
 
+interface Constraints {
+  evo_slots: number
+  hero_slots: number
+  wild_slots: number
+  max_evos: number
+  max_heroes: number
+  max_evo_or_hero: number
+}
+
 interface DecksData {
   battles: Battle[]
-  decks: { cards: Card[] }[]  // kept for coach endpoint compat
+  decks: { cards: Card[] }[]
   collection: Card[]
   advice: {
     ladder_decks: SuggestedDeck[]
     clan_war_deck: SuggestedDeck
   } | null
+  constraints: Constraints
 }
 
 export default function DecksPage() {
@@ -113,7 +123,7 @@ export default function DecksPage() {
     if (fetchedRef.current) return
     fetchedRef.current = true
     const mode = getApiMode()
-    fetch(`${apiUrl}/decks?mode=${mode}`)
+    fetch(`${apiUrl}/decks?mode=${mode}${getTagParam()}`)
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
@@ -144,7 +154,7 @@ export default function DecksPage() {
     setCoachLoading(true)
     setCoachJobId(null)
 
-    fetch(`${apiUrl}/coach/battle/${index}?mode=${mode}`)
+    fetch(`${apiUrl}/coach/battle/${index}?mode=${mode}${getTagParam()}`)
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
@@ -186,54 +196,85 @@ export default function DecksPage() {
     )
   }
 
+  type SlotType = 'regular' | 'evo' | 'hero' | 'wild'
+
+  function assignSlots(cards: Card[], c: Constraints): { card: Card; slot: SlotType }[] {
+    const isEvo = (x: Card) => (x as any).evolutionLevel > 0 && x.iconUrls?.evolutionMedium && !x.iconUrls?.heroMedium
+    const isHero = (x: Card) => (x as any).evolutionLevel > 0 && x.iconUrls?.heroMedium
+    const evoCards = cards.filter(isEvo)
+    const heroCards = cards.filter(isHero)
+    const regularCards = cards.filter(x => !isEvo(x) && !isHero(x))
+    const result: { card: Card; slot: SlotType }[] = regularCards.map(x => ({ card: x, slot: 'regular' }))
+    for (let i = 0; i < c.evo_slots; i++) {
+      if (i < evoCards.length) result.push({ card: evoCards[i], slot: 'evo' })
+    }
+    for (let i = 0; i < c.hero_slots; i++) {
+      if (i < heroCards.length) result.push({ card: heroCards[i], slot: 'hero' })
+    }
+    const usedEvos = evoCards.slice(0, c.evo_slots)
+    const usedHeroes = heroCards.slice(0, c.hero_slots)
+    const wild = [...evoCards.filter(x => !usedEvos.includes(x)), ...heroCards.filter(x => !usedHeroes.includes(x))]
+    for (let i = 0; i < c.wild_slots && i < wild.length; i++) {
+      result.push({ card: wild[i], slot: 'wild' })
+    }
+    return result
+  }
+
+  function slotContainerClass(slot: SlotType): string {
+    if (slot === 'evo') return 'ring-2 ring-fuchsia-500 bg-fuchsia-950/50'
+    if (slot === 'hero') return 'ring-2 ring-yellow-400 bg-yellow-950/40'
+    if (slot === 'wild') return 'ring-2 ring-fuchsia-400/50 bg-gradient-to-br from-fuchsia-950/60 to-yellow-950/40'
+    return ''
+  }
+
   const renderCardList = (cardNames: string[]) => {
+    const constraints = data?.constraints ?? { evo_slots: 0, hero_slots: 0, wild_slots: 0, max_evos: 0, max_heroes: 0, max_evo_or_hero: 0 }
+    const resolved = cardNames.map(name => data?.collection.find(c => c.name.toLowerCase() === name.toLowerCase()) ?? null)
+    const validCards = resolved.filter(Boolean) as Card[]
+    const slotted = assignSlots(validCards, constraints)
+    // Track which names had no match
+    const notFound = cardNames.filter(n => !data?.collection.find(c => c.name.toLowerCase() === n.toLowerCase()))
+
     return (
       <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 my-4">
-        {cardNames.map(name => {
-          const card = data?.collection.find(c => c.name.toLowerCase() === name.toLowerCase())
-          if (!card) return (
-            <div key={name} className="glass-card flex items-center justify-center p-2 text-center h-[80px]">
-              <span className="text-[10px] text-zinc-500">{name}</span>
+        {slotted.map(({ card, slot }, idx) => (
+          <div
+            key={`${card.name}-${idx}`}
+            className={`relative rounded-xl overflow-hidden border border-rarity-${card.rarity} transition-transform hover:scale-105 ${slotContainerClass(slot)}`}
+            title={`${card.name} — Lvl ${formatLevel(card.level, card.rarity)} [${slot}]`}
+          >
+            <Image
+              src={card.iconUrls.heroMedium || card.iconUrls.medium}
+              alt={card.name}
+              width={80}
+              height={80}
+              className="w-full"
+              unoptimized
+            />
+            <div className="absolute bottom-0 left-0 right-0 bg-black/80 text-center py-0.5">
+              <span className="text-[10px] font-bold text-white">{formatLevel(card.level, card.rarity)}</span>
             </div>
-          )
-
-          return (
-            <div
-              key={card.name}
-              className={`group relative rounded-xl overflow-hidden border border-rarity-${card.rarity} bg-rarity-${card.rarity} transition-transform hover:scale-105`}
-              title={`${card.name} — Lvl ${formatLevel(card.level, card.rarity)}`}
-            >
-              <Image
-                src={card.iconUrls.heroMedium || card.iconUrls.medium}
-                alt={card.name}
-                width={80}
-                height={80}
-                className="w-full"
-                unoptimized
-              />
-              <div className="absolute bottom-0 left-0 right-0 bg-black/80 text-center py-0.5">
-                <span className="text-[10px] font-bold text-white">
-                  {formatLevel(card.level, card.rarity)}
-                </span>
-              </div>
-              <div className="absolute top-0 left-0 bg-purple-600/90 text-[9px] font-bold text-white px-1.5 py-0.5 rounded-br-lg z-10">
-                {card.elixirCost}
-              </div>
-              {/* Evo Shard Indicator */}
-              {(card as any).evolutionLevel > 0 && card.iconUrls?.evolutionMedium && !card.iconUrls?.heroMedium && (
-                <div className="absolute top-1 right-1 w-4 h-4 flex items-center justify-center bg-fuchsia-600 border border-fuchsia-300 rounded-sm rotate-45 z-20">
-                  <span className="-rotate-45 text-[8px] font-black text-white ml-[1px]">❖</span>
-                </div>
-              )}
-              {/* Hero Indicator */}
-              {(card as any).evolutionLevel > 0 && card.iconUrls?.heroMedium && (
-                <div className="absolute top-1 right-1 w-4 h-4 flex items-center justify-center bg-yellow-500 border border-yellow-200 rounded-sm z-20">
-                  <span className="text-[10px] font-black text-white ml-[1px] -mt-[1px]">★</span>
-                </div>
-              )}
+            <div className="absolute top-0 left-0 bg-purple-600/90 text-[9px] font-bold text-white px-1.5 py-0.5 rounded-br-lg z-10">
+              {card.elixirCost}
             </div>
-          )
-        })}
+            {(card as any).evolutionLevel > 0 && card.iconUrls?.evolutionMedium && !card.iconUrls?.heroMedium && (
+              <div className="absolute top-1 right-1 w-4 h-4 flex items-center justify-center bg-fuchsia-600 border border-fuchsia-300 rounded-sm rotate-45 z-20">
+                <span className="-rotate-45 text-[8px] font-black text-white ml-[1px]">❖</span>
+              </div>
+            )}
+            {(card as any).evolutionLevel > 0 && card.iconUrls?.heroMedium && (
+              <div className="absolute top-1 right-1 w-4 h-4 flex items-center justify-center bg-yellow-500 border border-yellow-200 rounded-sm z-20">
+                <span className="text-[10px] font-black text-white ml-[1px] -mt-[1px]">★</span>
+              </div>
+            )}
+          </div>
+        ))}
+        {notFound.map(name => (
+          <div key={name} className="glass-card flex flex-col items-center justify-center p-1 text-center h-[80px] opacity-50">
+            <span className="text-[9px] text-zinc-500 leading-tight">{name}</span>
+            <span className="text-[8px] text-zinc-600">not owned</span>
+          </div>
+        ))}
       </div>
     )
   }
@@ -252,13 +293,13 @@ export default function DecksPage() {
         </div>
         <div className="px-5 py-2">
           {renderCardList(deck.cards)}
-          <div className="grid md:grid-cols-2 gap-6 mt-4 mb-3">
-            <div>
-              <h4 className="text-[11px] font-bold text-purple-400 uppercase tracking-wider mb-2">Why It Fits Your Levels</h4>
+          <div className="grid md:grid-cols-2 gap-4 mt-2 mb-3">
+            <div className="glass-card p-4 bg-white/[0.02]">
+              <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Deck Description</h4>
               <p className="text-sm text-zinc-300 leading-relaxed">{deck.why_it_fits}</p>
             </div>
-            <div>
-              <h4 className="text-[11px] font-bold text-fuchsia-400 uppercase tracking-wider mb-2">Win Condition</h4>
+            <div className="glass-card p-4 bg-white/[0.02]">
+              <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Win Condition</h4>
               <p className="text-sm text-zinc-300 leading-relaxed">{deck.win_condition}</p>
             </div>
           </div>
@@ -422,8 +463,8 @@ export default function DecksPage() {
                       {battle.player_deck.deck_score && renderDeckScore(battle.player_deck.deck_score)}
                     </div>
                     <div className="grid grid-cols-4 gap-1.5">
-                      {battle.player_deck.cards.map((card, ci) => (
-                        <div key={`p-${ci}`} className={`relative rounded-lg overflow-hidden border border-rarity-${card.rarity} bg-rarity-${card.rarity}`}>
+                      {assignSlots(battle.player_deck.cards, data.constraints).map(({ card, slot }, ci) => (
+                        <div key={`p-${ci}`} className={`relative rounded-lg overflow-hidden border border-rarity-${card.rarity} ${slotContainerClass(slot)}`}>
                           <Image src={(card as any).iconUrls?.heroMedium || (card as any).iconUrls?.medium || ''} alt={card.name} width={70} height={70} className="w-full" unoptimized />
                           <div className="absolute bottom-0 left-0 right-0 bg-black/80 text-center py-0.5">
                             <span className="text-[9px] font-bold text-white">{formatLevel(card.level, card.rarity)}</span>

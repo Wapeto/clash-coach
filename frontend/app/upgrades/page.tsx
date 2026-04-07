@@ -5,7 +5,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { formatLevel, toGameLevel } from '../utils/levels'
 import ReactMarkdown from 'react-markdown'
-import { getApiMode } from '../utils/settings'
+import { getApiMode, getTagParam } from '../utils/settings'
 import { useChainPolling, STEP_LABELS } from '../utils/useChainPolling'
 
 interface Priority {
@@ -56,7 +56,7 @@ export default function UpgradesPage() {
     if (fetchedRef.current) return
     fetchedRef.current = true
     const mode = getApiMode()
-    fetch(`${apiUrl}/upgrades?mode=${mode}`)
+    fetch(`${apiUrl}/upgrades?mode=${mode}${getTagParam()}`)
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()

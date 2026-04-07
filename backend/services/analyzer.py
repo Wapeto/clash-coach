@@ -10,16 +10,16 @@ def _to_game_level(api_level: int, rarity: str) -> int:
     return start + api_level - 1
 
 
-def compute_deck_score(cards: list[dict]) -> dict:
+def compute_deck_score(cards: list[dict], constraints=None) -> dict:
     """
     Score a deck 0–100 based on:
     - 50% average game level relative to max (16)
     - 20% level consistency (penalise a weak-link card far below average)
     - 15% elixir curve proximity to optimal (3.6)
-    - 15% evo/hero presence bonus
+    - 15% evo/hero presence bonus (capped by arena constraints)
 
-    cards: list of card objects with at minimum: level, rarity.
-           Optionally: elixirCost, evolutionLevel, iconUrls, name.
+    constraints: optional DeckConstraints — if provided, evo/hero count is capped
+                 to the arena's actual active slot limits.
     """
     if not cards:
         return {"score": 0, "avg_level": 0, "min_level": 0, "level_pct": 0,
@@ -29,20 +29,36 @@ def compute_deck_score(cards: list[dict]) -> dict:
     avg_level = sum(game_levels) / len(game_levels)
     min_level = min(game_levels)
 
-    # 50% — how close cards are to max level on average
     level_score = (avg_level / _MAX_GAME_LEVEL) * 100
 
-    # 20% — weak-link penalty: if the lowest card is far below the average it drags the deck
     consistency_ratio = min_level / avg_level if avg_level > 0 else 1.0
     consistency_score = min(consistency_ratio, 1.0) * 100
 
-    # 15% — elixir curve (peaks at _OPTIMAL_ELIXIR, ±1 elixir costs 20 pts)
     elixirs = [c.get("elixirCost", 0) for c in cards if c.get("elixirCost")]
     avg_elixir = sum(elixirs) / len(elixirs) if elixirs else _OPTIMAL_ELIXIR
     elixir_score = max(0.0, 100.0 - abs(avg_elixir - _OPTIMAL_ELIXIR) * 20)
 
-    # 15% — evo/hero bonus (each unlocked evo/hero = +50 pts, capped at 100)
-    evo_hero_count = sum(1 for c in cards if c.get("evolutionLevel", 0) > 0)
+    # Count evo and hero cards separately, then cap by arena constraints
+    raw_evo = sum(
+        1 for c in cards
+        if c.get("evolutionLevel", 0) > 0
+        and c.get("iconUrls", {}).get("evolutionMedium")
+        and not c.get("iconUrls", {}).get("heroMedium")
+    )
+    raw_hero = sum(
+        1 for c in cards
+        if c.get("evolutionLevel", 0) > 0
+        and c.get("iconUrls", {}).get("heroMedium")
+    )
+
+    if constraints is not None:
+        active_evos = min(raw_evo, constraints.max_evos)
+        active_heroes = min(raw_hero, constraints.max_heroes)
+        evo_hero_count = min(active_evos + active_heroes, constraints.max_evo_or_hero)
+    else:
+        # No constraints: cap at top-arena max (3)
+        evo_hero_count = min(raw_evo + raw_hero, 3)
+
     evo_score = min(evo_hero_count * 50, 100)
 
     score = (
@@ -144,10 +160,11 @@ def _parse_game_mode(battle: dict) -> str:
     return "Unknown"
 
 
-def get_last_battles(battles: list, player_collection: list, n: int = 5) -> list:
+def get_last_battles(battles: list, player_collection: list, n: int = 5, constraints=None) -> list:
     """
     Return the last n battles with player deck, opponent deck, deck scores,
     win probability, and match result.
+    constraints: optional DeckConstraints for accurate evo/hero slot counting.
     """
     card_lookup = {c["name"].lower(): c for c in player_collection}
     result = []
@@ -170,7 +187,7 @@ def get_last_battles(battles: list, player_collection: list, n: int = 5) -> list
         # Enrich player cards with full collection data (evo/hero info)
         enriched_player_cards = [card_lookup.get(c["name"].lower(), c) for c in player_cards]
 
-        player_score = compute_deck_score(enriched_player_cards)
+        player_score = compute_deck_score(enriched_player_cards, constraints)
         opponent_score = compute_deck_score(opponent_cards)
         win_prob = compute_win_probability(player_score, opponent_score)
 
